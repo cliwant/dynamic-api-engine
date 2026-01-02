@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prompt API Engine - API Tester</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Pretendard:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --border-color: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent-blue: #58a6ff;
+            --accent-green: #3fb950;
+            --accent-purple: #a371f7;
+            --accent-orange: #d29922;
+            --accent-red: #f85149;
+            --accent-cyan: #39c5cf;
+            --accent-pink: #db61a2;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+        
+        .container { display: grid; grid-template-columns: 300px 1fr; height: 100vh; }
+        
+        /* Sidebar */
+        .sidebar { background: var(--bg-secondary); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; overflow: hidden; }
+        .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border-color); }
+        .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+        .logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+        .logo-text { font-size: 16px; font-weight: 700; }
+        .logo-text span { color: var(--accent-blue); }
+        
+        .search-box { position: relative; margin-bottom: 10px; }
+        .search-box input { width: 100%; padding: 9px 12px 9px 32px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); font-size: 13px; outline: none; }
+        .search-box input:focus { border-color: var(--accent-blue); }
+        .search-box::before { content: "🔍"; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; }
+        
+        .sidebar-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+        .sidebar-btn { flex: 1; min-width: 80px; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 8px 6px; border: none; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: transform 0.15s; }
+        .sidebar-btn:hover { transform: translateY(-1px); }
+        .sidebar-btn.refresh { background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); }
+        .sidebar-btn.add { background: linear-gradient(135deg, var(--accent-green), var(--accent-cyan)); color: white; }
+        .sidebar-btn.llm { background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink)); color: white; }
+        
+        .api-list { flex: 1; overflow-y: auto; padding: 10px; }
+        .api-group { margin-bottom: 14px; }
+        .api-group-header { font-size: 10px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; padding: 6px 10px; }
+        .api-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; cursor: pointer; transition: background 0.15s; }
+        .api-item:hover { background: var(--bg-tertiary); }
+        .api-item.active { background: var(--bg-tertiary); border: 1px solid var(--accent-blue); }
+        .method-badge { font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 600; padding: 2px 5px; border-radius: 3px; min-width: 36px; text-align: center; }
+        .method-badge.get { background: rgba(59, 185, 80, 0.2); color: var(--accent-green); }
+        .method-badge.post { background: rgba(88, 166, 255, 0.2); color: var(--accent-blue); }
+        .api-item-info { flex: 1; min-width: 0; }
+        .api-item-path { font-family: 'JetBrains Mono', monospace; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .api-item-name { font-size: 10px; color: var(--text-secondary); margin-top: 1px; }
+        
+        /* Main */
+        .main { display: flex; flex-direction: column; overflow: hidden; }
+        .main-header { padding: 16px 20px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; }
+        .api-title { display: flex; align-items: center; gap: 10px; }
+        .api-title h1 { font-size: 18px; font-weight: 600; }
+        .type-badge { font-family: 'JetBrains Mono', monospace; font-size: 10px; padding: 3px 7px; border-radius: 4px; background: rgba(163, 113, 247, 0.2); color: var(--accent-purple); }
+        .immutable-badge { font-size: 9px; padding: 3px 7px; border-radius: 4px; background: rgba(248, 81, 73, 0.2); color: var(--accent-red); }
+        
+        .send-btn { display: flex; align-items: center; gap: 6px; padding: 9px 18px; background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple)); border: none; border-radius: 6px; color: white; font-size: 13px; font-weight: 600; cursor: pointer; }
+        .send-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(88, 166, 255, 0.3); }
+        
+        /* Tabs */
+        .tabs { display: flex; border-bottom: 1px solid var(--border-color); padding: 0 20px; overflow-x: auto; }
+        .tab { padding: 10px 14px; font-size: 12px; font-weight: 500; color: var(--text-secondary); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+        .tab:hover { color: var(--text-primary); }
+        .tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); }
+        
+        .main-content { flex: 1; overflow: hidden; }
+        .tab-panel { display: none; height: 100%; overflow: auto; }
+        .tab-panel.active { display: block; }
+        
+        /* Request Panel */
+        .request-panel { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+        .request-section { padding: 16px 20px; border-bottom: 1px solid var(--border-color); }
+        .section-title { font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+        
+        .url-bar { display: flex; gap: 10px; margin-bottom: 14px; }
+        .url-input { flex: 1; display: flex; align-items: center; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
+        .url-base { padding: 8px 10px; background: var(--bg-secondary); color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; font-size: 12px; border-right: 1px solid var(--border-color); }
+        .url-input input { flex: 1; padding: 8px 10px; background: transparent; border: none; color: var(--text-primary); font-family: 'JetBrains Mono', monospace; font-size: 12px; outline: none; }
+        
+        .params-grid { display: grid; gap: 6px; }
+        .param-row { display: grid; grid-template-columns: 120px 1fr 60px auto; gap: 6px; align-items: center; }
+        .param-row input, .param-row select { padding: 7px 10px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 5px; color: var(--text-primary); font-size: 12px; outline: none; }
+        .param-row input:focus { border-color: var(--accent-blue); }
+        .param-required { color: var(--accent-red); font-size: 9px; }
+        .fill-sample-btn { padding: 4px 8px; background: var(--accent-cyan); color: white; border: none; border-radius: 4px; font-size: 10px; cursor: pointer; }
+        
+        /* Response */
+        .response-section { display: flex; flex-direction: column; overflow: hidden; padding: 16px 20px; height: 100%; }
+        .response-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .response-status { display: flex; align-items: center; gap: 10px; }
+        .status-badge { padding: 3px 8px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; }
+        .status-badge.success { background: rgba(59, 185, 80, 0.2); color: var(--accent-green); }
+        .status-badge.error { background: rgba(248, 81, 73, 0.2); color: var(--accent-red); }
+        .response-time { font-size: 11px; color: var(--text-secondary); }
+        
+        .view-toggle { display: flex; gap: 4px; }
+        .view-toggle button { padding: 4px 10px; font-size: 11px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-secondary); cursor: pointer; border-radius: 4px; }
+        .view-toggle button.active { background: var(--accent-blue); color: white; border-color: var(--accent-blue); }
+        
+        .response-body { flex: 1; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; overflow: auto; padding: 14px; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5; }
+        .response-body pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+        .json-key { color: var(--accent-cyan); }
+        .json-string { color: var(--accent-green); }
+        .json-number { color: var(--accent-orange); }
+        .json-boolean { color: var(--accent-purple); }
+        .json-null { color: var(--text-secondary); }
+        
+        /* Table View */
+        .table-view { width: 100%; }
+        .data-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 16px; }
+        .data-table th { background: var(--bg-secondary); padding: 8px 10px; text-align: left; font-weight: 600; border-bottom: 1px solid var(--border-color); position: sticky; top: 0; }
+        .data-table td { padding: 6px 10px; border-bottom: 1px solid var(--border-color); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .data-table tr:hover td { background: rgba(88, 166, 255, 0.05); }
+        .table-title { font-size: 12px; font-weight: 600; color: var(--accent-cyan); margin-bottom: 8px; }
+        
+        /* Forms */
+        .form-panel { padding: 20px; max-width: 900px; }
+        .form-section { margin-bottom: 20px; }
+        .form-section-title { font-size: 13px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+        .form-row.full { grid-template-columns: 1fr; }
+        .form-group { display: flex; flex-direction: column; gap: 5px; }
+        .form-label { font-size: 11px; font-weight: 500; color: var(--text-secondary); }
+        .form-label .required { color: var(--accent-red); }
+        .form-input, .form-select, .form-textarea { padding: 9px 12px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); font-size: 13px; outline: none; }
+        .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--accent-blue); }
+        .form-textarea { font-family: 'JetBrains Mono', monospace; min-height: 90px; resize: vertical; }
+        .form-hint { font-size: 10px; color: var(--text-secondary); }
+        
+        .test-section { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+        .test-section.success { border-color: var(--accent-green); }
+        .test-section.error { border-color: var(--accent-red); }
+        .test-btn { display: flex; align-items: center; gap: 6px; padding: 8px 14px; background: var(--accent-orange); border: none; border-radius: 6px; color: white; font-size: 12px; font-weight: 600; cursor: pointer; }
+        .test-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .test-result { margin-top: 12px; padding: 10px; background: var(--bg-tertiary); border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11px; max-height: 200px; overflow: auto; }
+        
+        .submit-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 12px; background: linear-gradient(135deg, var(--accent-green), var(--accent-cyan)); border: none; border-radius: 6px; color: white; font-size: 14px; font-weight: 600; cursor: pointer; }
+        .submit-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(59, 185, 80, 0.3); }
+        .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+        
+        /* Metadata */
+        .metadata-panel { padding: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; align-content: start; }
+        .metadata-card { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; }
+        .metadata-card-header { padding: 14px 16px; background: var(--bg-tertiary); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 8px; }
+        .metadata-card-header h3 { font-size: 13px; font-weight: 600; }
+        .table-badge { font-family: 'JetBrains Mono', monospace; font-size: 9px; padding: 2px 6px; border-radius: 3px; background: rgba(57, 197, 207, 0.2); color: var(--accent-cyan); }
+        .metadata-card-body { padding: 14px 16px; max-height: 300px; overflow: auto; }
+        .info-grid { display: grid; gap: 8px; }
+        .info-row { display: grid; grid-template-columns: 110px 1fr; gap: 10px; font-size: 12px; }
+        .info-label { color: var(--text-secondary); font-weight: 500; }
+        .info-value { color: var(--text-primary); font-family: 'JetBrains Mono', monospace; word-break: break-all; }
+        .info-value.code { background: var(--bg-tertiary); padding: 6px 10px; border-radius: 5px; white-space: pre-wrap; max-height: 120px; overflow: auto; }
+        .badge { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 10px; font-weight: 500; }
+        .badge.green { background: rgba(59, 185, 80, 0.2); color: var(--accent-green); }
+        .badge.red { background: rgba(248, 81, 73, 0.2); color: var(--accent-red); }
+        .badge.blue { background: rgba(88, 166, 255, 0.2); color: var(--accent-blue); }
+        .badge.purple { background: rgba(163, 113, 247, 0.2); color: var(--accent-purple); }
+        
+        /* LLM Panel */
+        .llm-panel { padding: 20px; max-width: 1000px; }
+        .table-selector { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-bottom: 16px; max-height: 200px; overflow-y: auto; }
+        .table-item { padding: 10px; background: var(--bg-tertiary); border: 2px solid var(--border-color); border-radius: 6px; cursor: pointer; transition: all 0.15s; }
+        .table-item:hover { border-color: var(--accent-blue); }
+        .table-item.selected { border-color: var(--accent-green); background: rgba(59, 185, 80, 0.1); }
+        .table-item-name { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; }
+        .table-item-info { font-size: 10px; color: var(--text-secondary); margin-top: 2px; }
+        
+        .schema-preview { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 14px; margin-bottom: 16px; max-height: 280px; overflow: auto; }
+        .schema-table { margin-bottom: 14px; }
+        .schema-table-name { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; color: var(--accent-cyan); margin-bottom: 6px; }
+        .schema-columns { display: grid; gap: 2px; font-size: 11px; }
+        .schema-column { display: grid; grid-template-columns: 140px 100px 1fr; gap: 6px; padding: 3px 0; border-bottom: 1px solid var(--border-color); }
+        .schema-column-name { font-family: 'JetBrains Mono', monospace; }
+        .schema-column-type { color: var(--text-secondary); }
+        .schema-column-sample { color: var(--accent-orange); font-family: 'JetBrains Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        
+        .llm-config { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; padding: 14px; background: var(--bg-secondary); border-radius: 8px; }
+        .llm-config .form-group { margin: 0; }
+        
+        .auth-section { padding: 14px; background: var(--bg-secondary); border-radius: 8px; margin-bottom: 16px; }
+        .auth-section-title { font-size: 12px; font-weight: 600; margin-bottom: 10px; }
+        
+        .generated-result { background: var(--bg-secondary); border: 1px solid var(--accent-green); border-radius: 10px; padding: 16px; margin-top: 16px; }
+        .generated-result h4 { font-size: 13px; margin-bottom: 14px; color: var(--accent-green); }
+        .generated-field { margin-bottom: 10px; }
+        .generated-field-label { font-size: 11px; color: var(--text-secondary); margin-bottom: 3px; }
+        .generated-field-value { font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 6px 10px; background: var(--bg-tertiary); border-radius: 5px; max-height: 120px; overflow: auto; white-space: pre-wrap; }
+        
+        /* Audit */
+        .audit-list { display: grid; gap: 10px; }
+        .audit-item { padding: 10px 14px; background: var(--bg-tertiary); border-radius: 6px; border-left: 3px solid var(--accent-blue); }
+        .audit-item.CREATE, .audit-item.VERSION_CREATE { border-left-color: var(--accent-green); }
+        .audit-item.ACTIVATE, .audit-item.SET_CURRENT { border-left-color: var(--accent-green); }
+        .audit-item.DEACTIVATE { border-left-color: var(--accent-orange); }
+        .audit-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+        .audit-action { font-weight: 600; font-size: 12px; }
+        .audit-time { font-size: 10px; color: var(--text-secondary); }
+        .audit-details { font-size: 11px; color: var(--text-secondary); }
+        
+        /* Modal */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.7); z-index: 1000; align-items: center; justify-content: center; }
+        .modal-overlay.active { display: flex; }
+        .modal { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; width: 90%; max-width: 700px; max-height: 90vh; overflow: auto; }
+        .modal-header { padding: 16px 20px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; }
+        .modal-header h2 { font-size: 16px; font-weight: 600; }
+        .modal-close { width: 28px; height: 28px; border: none; background: transparent; color: var(--text-secondary); font-size: 18px; cursor: pointer; border-radius: 5px; }
+        .modal-close:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+        .modal-body { padding: 20px; }
+        
+        .alert { padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; font-size: 12px; }
+        .alert.info { background: rgba(88, 166, 255, 0.1); border: 1px solid var(--accent-blue); color: var(--accent-blue); }
+        .alert.success { background: rgba(59, 185, 80, 0.1); border: 1px solid var(--accent-green); color: var(--accent-green); }
+        .alert.warning { background: rgba(210, 153, 34, 0.1); border: 1px solid var(--accent-orange); color: var(--accent-orange); }
+        
+        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-secondary); padding: 30px; }
+        .empty-state-icon { font-size: 40px; margin-bottom: 12px; }
+        .empty-state-text { font-size: 13px; }
+        
+        .loading { display: flex; align-items: center; justify-content: center; height: 100%; }
+        .spinner { width: 28px; height: 28px; border: 3px solid var(--border-color); border-top-color: var(--accent-blue); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        ::-webkit-scrollbar { width: 7px; height: 7px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <div class="logo-icon">⚡</div>
+                    <div class="logo-text">Prompt <span>API</span></div>
+                </div>
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="API 검색...">
+                </div>
+                <div class="sidebar-buttons">
+                    <button class="sidebar-btn refresh" onclick="loadApis()" title="새로고침">🔄</button>
+                    <button class="sidebar-btn add" onclick="openAddModal()">➕ 추가</button>
+                    <button class="sidebar-btn llm" onclick="switchTab('llm')">🤖 LLM</button>
+                </div>
+            </div>
+            <div class="api-list" id="apiList"></div>
+        </div>
+        
+        <div class="main">
+            <div class="main-header">
+                <div class="api-title">
+                    <h1 id="apiTitle">API를 선택하세요</h1>
+                    <span class="type-badge" id="logicType" style="display:none;"></span>
+                    <span class="immutable-badge">🔒 Immutable</span>
+                </div>
+                <button class="send-btn" onclick="sendRequest()">▶ Send</button>
+            </div>
+            
+            <div class="tabs">
+                <div class="tab active" data-tab="request" onclick="switchTab('request')">📤 Request</div>
+                <div class="tab" data-tab="metadata" onclick="switchTab('metadata')">📋 Metadata</div>
+                <div class="tab" data-tab="add-version" onclick="switchTab('add-version')">➕ 버전추가</div>
+                <div class="tab" data-tab="llm" onclick="switchTab('llm')">🤖 LLM 생성</div>
+            </div>
+            
+            <div class="main-content">
+                <!-- Request Tab -->
+                <div class="tab-panel active" id="tab-request">
+                    <div class="request-panel">
+                        <div class="request-section">
+                            <div class="section-title">Request <button class="fill-sample-btn" onclick="fillSampleParams()" id="sampleBtn" style="display:none;">샘플값 채우기</button></div>
+                            <div class="url-bar">
+                                <div class="url-input">
+                                    <span class="url-base">http://localhost:8000</span>
+                                    <input type="text" id="urlPath" placeholder="/api/..." readonly>
+                                </div>
+                            </div>
+                            <div class="section-title">Parameters</div>
+                            <div class="params-grid" id="paramsGrid"></div>
+                        </div>
+                        <div class="response-section">
+                            <div class="response-header">
+                                <div class="section-title">Response</div>
+                                <div class="response-status" id="responseStatus" style="display:none;">
+                                    <span class="status-badge" id="statusBadge"></span>
+                                    <span class="response-time" id="responseTime"></span>
+                                </div>
+                                <div class="view-toggle" id="viewToggle" style="display:none;">
+                                    <button class="active" onclick="setViewMode('json')">JSON</button>
+                                    <button onclick="setViewMode('table')">Table</button>
+                                </div>
+                            </div>
+                            <div class="response-body" id="responseBody">
+                                <div class="empty-state"><div class="empty-state-icon">📡</div><div class="empty-state-text">Send a request</div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Metadata Tab -->
+                <div class="tab-panel" id="tab-metadata">
+                    <div class="metadata-panel" id="metadataPanel">
+                        <div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">API를 선택하면 메타데이터가 표시됩니다</div></div>
+                    </div>
+                </div>
+                
+                <!-- Add Version Tab -->
+                <div class="tab-panel" id="tab-add-version">
+                    <div class="form-panel">
+                        <div class="alert info">🔒 <strong>Immutable:</strong> 새 버전만 추가할 수 있으며, 테스트 통과 후 생성 가능합니다.</div>
+                        <div id="addVersionForm"><div class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-text">API를 선택하세요</div></div></div>
+                    </div>
+                </div>
+                
+                <!-- LLM Tab -->
+                <div class="tab-panel" id="tab-llm">
+                    <div class="llm-panel">
+                        <div class="alert info">🤖 <strong>LLM API 생성:</strong> 테이블 선택 → 스키마 확인 → 의도 입력 → AI 생성 → 테스트 → 적용</div>
+                        
+                        <div class="form-section">
+                            <div class="form-section-title">📊 테이블 선택</div>
+                            <div class="table-selector" id="tableSelector"><div class="loading"><div class="spinner"></div></div></div>
+                        </div>
+                        
+                        <div class="form-section" id="schemaPreviewSection" style="display:none;">
+                            <div class="form-section-title">📋 선택된 테이블 스키마 (컬럼 + 샘플 데이터)</div>
+                            <div class="schema-preview" id="schemaPreview"></div>
+                        </div>
+                        
+                        <div class="form-section">
+                            <div class="form-section-title">⚙️ LLM 설정</div>
+                            <div class="llm-config">
+                                <div class="form-group">
+                                    <label class="form-label">모델</label>
+                                    <select class="form-select" id="llmModel" onchange="updateAuthFields()"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Temperature</label>
+                                    <input type="number" class="form-input" id="llmTemp" value="0.7" min="0" max="2" step="0.1">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Max Tokens</label>
+                                    <input type="number" class="form-input" id="llmMaxTokens" value="4000" min="100" max="8000">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Top P</label>
+                                    <input type="number" class="form-input" id="llmTopP" value="1.0" min="0" max="1" step="0.1">
+                                </div>
+                            </div>
+                            
+                            <div class="auth-section" id="authSection">
+                                <div class="auth-section-title">🔐 인증</div>
+                                <div id="authFields"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-section">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">HTTP 메서드</label>
+                                    <select class="form-select" id="llmMethod"><option value="GET">GET</option><option value="POST">POST</option></select>
+                                </div>
+                            </div>
+                            <div class="form-row full">
+                                <div class="form-group">
+                                    <label class="form-label">사용자 의도 <span class="required">*</span></label>
+                                    <textarea class="form-textarea" id="llmIntent" placeholder="예: 사용자 목록을 최근 가입순으로 조회하고 회사 정보도 함께 보여주세요"></textarea>
+                                </div>
+                            </div>
+                            <button class="submit-btn" onclick="generateWithLLM()" id="llmGenerateBtn">🤖 API 생성</button>
+                        </div>
+                        
+                        <div id="llmResult"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Add API Modal -->
+    <div class="modal-overlay" id="addModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>➕ 새 API 추가</h2>
+                <button class="modal-close" onclick="closeAddModal()">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="alert info">🔒 <strong>Immutable:</strong> 생성 전 테스트 필수. 생성 후 수정/삭제 불가.</div>
+                <form id="createApiForm" onsubmit="return false;">
+                    <div class="form-section">
+                        <div class="form-section-title">📍 라우트</div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">경로 <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="newPath" placeholder="users/list" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">메서드</label>
+                                <select class="form-select" id="newMethod"><option value="GET">GET</option><option value="POST">POST</option></select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">이름 <span class="required">*</span></label>
+                                <input type="text" class="form-input" id="newName" placeholder="사용자 목록" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">태그</label>
+                                <input type="text" class="form-input" id="newTags" placeholder="users">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-section">
+                        <div class="form-section-title">📦 버전 v1</div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">로직 타입</label>
+                                <select class="form-select" id="newLogicType"><option value="SQL">SQL</option><option value="MULTI_SQL">MULTI_SQL</option><option value="STATIC_RESPONSE">STATIC_RESPONSE</option></select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">변경 노트</label>
+                                <input type="text" class="form-input" id="newChangeNote" value="초기 버전">
+                            </div>
+                        </div>
+                        <div class="form-row full">
+                            <div class="form-group">
+                                <label class="form-label">요청 스펙 (JSON)</label>
+                                <textarea class="form-textarea" id="newRequestSpec" placeholder='{"limit": {"type": "int", "default": 10}}'></textarea>
+                            </div>
+                        </div>
+                        <div class="form-row full">
+                            <div class="form-group">
+                                <label class="form-label">로직 바디 <span class="required">*</span></label>
+                                <textarea class="form-textarea" id="newLogicBody" placeholder="SELECT * FROM table LIMIT :limit" required></textarea>
+                            </div>
+                        </div>
+                        <div class="form-row full">
+                            <div class="form-group">
+                                <label class="form-label">샘플 파라미터 (JSON)</label>
+                                <textarea class="form-textarea" id="newSampleParams" placeholder='{"limit": 10}'></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="test-section" id="newApiTestSection">
+                        <div class="form-section-title">🧪 테스트 (필수)</div>
+                        <button type="button" class="test-btn" onclick="testNewApi()">▶ SQL 테스트 실행</button>
+                        <div class="test-result" id="newApiTestResult" style="display:none;"></div>
+                    </div>
+                    
+                    <button type="button" class="submit-btn" onclick="createApi()" id="createApiBtn" disabled>✓ API 생성 (테스트 통과 필요)</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let apis = [], selectedApi = null, routeData = null, versionData = null, auditData = [], tables = [];
+        let llmModels = [], authMethods = {};
+        const API_KEY = 'your-admin-api-key';
+        let selectedTables = new Set();
+        let responseData = null, viewMode = 'json';
+        let newApiTestPassed = false, versionTestPassed = false;
+        
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
+            document.getElementById(`tab-${tab}`)?.classList.add('active');
+            if (tab === 'llm' && tables.length === 0) { loadTables(); loadLLMModels(); }
+        }
+        
+        function openAddModal() { document.getElementById('addModal').classList.add('active'); newApiTestPassed = false; updateCreateBtn(); }
+        function closeAddModal() { document.getElementById('addModal').classList.remove('active'); }
+        function updateCreateBtn() { document.getElementById('createApiBtn').disabled = !newApiTestPassed; document.getElementById('createApiBtn').textContent = newApiTestPassed ? '✓ API 생성' : '✓ API 생성 (테스트 통과 필요)'; }
+        
+        async function loadApis() {
+            try {
+                const res = await fetch('/admin/routes?size=100');
+                const data = await res.json();
+                apis = data.data || [];
+                renderApiList();
+            } catch (e) { console.error('API 로드 실패:', e); }
+        }
+        
+        function renderApiList(filter = '') {
+            const container = document.getElementById('apiList');
+            const groups = {};
+            apis.forEach(api => {
+                if (filter && !api.path.toLowerCase().includes(filter.toLowerCase()) && !api.name?.toLowerCase().includes(filter.toLowerCase())) return;
+                const group = api.path.split('/')[0] || 'other';
+                if (!groups[group]) groups[group] = [];
+                groups[group].push(api);
+            });
+            let html = '';
+            for (const [group, items] of Object.entries(groups)) {
+                html += `<div class="api-group"><div class="api-group-header">${group} (${items.length})</div>`;
+                items.forEach(api => {
+                    html += `<div class="api-item" onclick="selectApi('${api.id}')" id="api-${api.id}" ${api.is_active ? '' : 'style="opacity:0.5"'}>
+                        <span class="method-badge ${api.method.toLowerCase()}">${api.method}</span>
+                        <div class="api-item-info"><div class="api-item-path">/api/${api.path}</div><div class="api-item-name">${api.name || ''}</div></div></div>`;
+                });
+                html += '</div>';
+            }
+            container.innerHTML = html || '<div class="empty-state"><div class="empty-state-text">API가 없습니다</div></div>';
+        }
+        
+        async function selectApi(id) {
+            document.querySelectorAll('.api-item').forEach(el => el.classList.remove('active'));
+            document.getElementById(`api-${id}`)?.classList.add('active');
+            selectedApi = apis.find(a => a.id === id);
+            if (!selectedApi) return;
+            await Promise.all([loadRouteData(id), loadVersionData(id), loadAuditData(id)]);
+            updateUI(); updateMetadataPanel(); updateAddVersionForm();
+        }
+        
+        async function loadRouteData(id) { try { const res = await fetch(`/admin/routes/${id}`); routeData = (await res.json()).data; } catch { routeData = null; }}
+        async function loadVersionData(id) {
+            try {
+                const res = await fetch(`/admin/routes/${id}/versions`);
+                const versions = (await res.json()).data || [];
+                const current = versions.find(v => v.is_current) || versions[0];
+                if (current) { const detail = await fetch(`/admin/routes/${id}/versions/${current.version}`); versionData = (await detail.json()).data; selectedApi.version = versionData; }
+            } catch { versionData = null; }
+        }
+        async function loadAuditData(id) { try { const res = await fetch(`/admin/routes/${id}/audit-logs?limit=10`); auditData = (await res.json()).data || []; } catch { auditData = []; }}
+        
+        function updateUI() {
+            if (!selectedApi) return;
+            document.getElementById('apiTitle').textContent = selectedApi.name || selectedApi.path;
+            document.getElementById('urlPath').value = `/api/${selectedApi.path}`;
+            const lt = document.getElementById('logicType');
+            if (selectedApi.version?.logic_type) { lt.textContent = selectedApi.version.logic_type; lt.style.display = 'inline'; } else { lt.style.display = 'none'; }
+            
+            const reqSpec = selectedApi.version?.request_spec || {};
+            const sampleParams = selectedApi.version?.sample_params || {};
+            let html = '';
+            for (const [key, spec] of Object.entries(reqSpec)) {
+                const def = sampleParams[key] !== undefined ? sampleParams[key] : (spec.default !== undefined ? spec.default : '');
+                html += `<div class="param-row"><input type="text" value="${key}" readonly style="background:var(--bg-secondary)"><input type="text" id="param-${key}" value="${def}" placeholder="${spec.description || 'Value'}"><select disabled><option>${spec.type || 'string'}</option></select>${spec.required ? '<span class="param-required">*</span>' : ''}</div>`;
+            }
+            document.getElementById('paramsGrid').innerHTML = html || '<div style="color:var(--text-secondary);font-size:12px">파라미터 없음</div>';
+            document.getElementById('sampleBtn').style.display = Object.keys(sampleParams).length > 0 ? 'inline-block' : 'none';
+            document.getElementById('responseBody').innerHTML = '<div class="empty-state"><div class="empty-state-icon">📡</div><div class="empty-state-text">Send a request</div></div>';
+            document.getElementById('responseStatus').style.display = 'none';
+            document.getElementById('viewToggle').style.display = 'none';
+        }
+        
+        function fillSampleParams() {
+            const sampleParams = selectedApi?.version?.sample_params || {};
+            for (const [key, val] of Object.entries(sampleParams)) {
+                const input = document.getElementById(`param-${key}`);
+                if (input) input.value = val;
+            }
+        }
+        
+        function updateAddVersionForm() {
+            const container = document.getElementById('addVersionForm');
+            if (!selectedApi) { container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-text">API를 선택하세요</div></div>'; return; }
+            versionTestPassed = false;
+            const nextV = (versionData?.version || 0) + 1;
+            container.innerHTML = `<form onsubmit="return false;">
+                <div class="form-row"><div class="form-group"><label class="form-label">API</label><input class="form-input" value="/api/${selectedApi.path}" readonly style="background:var(--bg-secondary)"></div><div class="form-group"><label class="form-label">버전</label><input class="form-input" value="v${nextV}" readonly style="background:var(--bg-secondary)"></div></div>
+                <div class="form-row"><div class="form-group"><label class="form-label">로직 타입</label><select class="form-select" id="versionLogicType"><option value="SQL" ${versionData?.logic_type==='SQL'?'selected':''}>SQL</option><option value="MULTI_SQL" ${versionData?.logic_type==='MULTI_SQL'?'selected':''}>MULTI_SQL</option><option value="STATIC_RESPONSE" ${versionData?.logic_type==='STATIC_RESPONSE'?'selected':''}>STATIC_RESPONSE</option></select></div><div class="form-group"><label class="form-label">변경 노트 <span class="required">*</span></label><input class="form-input" id="versionChangeNote" required></div></div>
+                <div class="form-row full"><div class="form-group"><label class="form-label">요청 스펙 (JSON)</label><textarea class="form-textarea" id="versionRequestSpec">${formatJson(versionData?.request_spec)}</textarea></div></div>
+                <div class="form-row full"><div class="form-group"><label class="form-label">로직 바디 <span class="required">*</span></label><textarea class="form-textarea" id="versionLogicBody" required>${escapeHtml(versionData?.logic_body||'')}</textarea></div></div>
+                <div class="form-row full"><div class="form-group"><label class="form-label">샘플 파라미터 (JSON)</label><textarea class="form-textarea" id="versionSampleParams">${formatJson(versionData?.sample_params)}</textarea></div></div>
+                <div class="test-section" id="versionTestSection">
+                    <div class="form-section-title">🧪 테스트 (필수)</div>
+                    <button type="button" class="test-btn" onclick="testVersion()">▶ SQL 테스트 실행</button>
+                    <div class="test-result" id="versionTestResult" style="display:none;"></div>
+                </div>
+                <button type="button" class="submit-btn" onclick="createVersion()" id="createVersionBtn" disabled>✓ v${nextV} 생성 (테스트 통과 필요)</button></form>`;
+        }
+        
+        async function testNewApi() { await runTest('newApiTestResult', 'newLogicBody', 'newSampleParams', 'newApiTestSection', (ok) => { newApiTestPassed = ok; updateCreateBtn(); }); }
+        async function testVersion() { await runTest('versionTestResult', 'versionLogicBody', 'versionSampleParams', 'versionTestSection', (ok) => { versionTestPassed = ok; document.getElementById('createVersionBtn').disabled = !ok; document.getElementById('createVersionBtn').textContent = ok ? '✓ v' + ((versionData?.version || 0) + 1) + ' 생성' : '✓ 생성 (테스트 통과 필요)'; }); }
+        
+        async function runTest(resultId, bodyId, paramsId, sectionId, callback) {
+            const resultEl = document.getElementById(resultId);
+            const sectionEl = document.getElementById(sectionId);
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            sectionEl.classList.remove('success', 'error');
+            
+            const logicBody = document.getElementById(bodyId).value.trim();
+            let params = {};
+            try { const t = document.getElementById(paramsId).value.trim(); if (t) params = JSON.parse(t); } catch { resultEl.innerHTML = '<span style="color:var(--accent-red)">샘플 파라미터 JSON 오류</span>'; callback(false); return; }
+            
+            try {
+                const res = await fetch('/schema/test-sql', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ logic_type: 'SQL', logic_body: logicBody, params }) });
+                const data = await res.json();
+                if (data.data?.success) {
+                    sectionEl.classList.add('success');
+                    resultEl.innerHTML = `<span style="color:var(--accent-green)">✅ 테스트 성공 (${data.data.row_count}행, ${data.data.execution_time_ms}ms)</span><br><pre style="margin-top:8px;color:var(--text-secondary)">${JSON.stringify(data.data.data?.slice(0,3), null, 2)}</pre>`;
+                    callback(true);
+                } else {
+                    sectionEl.classList.add('error');
+                    resultEl.innerHTML = `<span style="color:var(--accent-red)">❌ 테스트 실패</span><br><pre style="margin-top:8px">${data.data?.error || 'Unknown error'}</pre>`;
+                    callback(false);
+                }
+            } catch (e) {
+                sectionEl.classList.add('error');
+                resultEl.innerHTML = `<span style="color:var(--accent-red)">❌ 요청 실패: ${e.message}</span>`;
+                callback(false);
+            }
+        }
+        
+        function updateMetadataPanel() {
+            const panel = document.getElementById('metadataPanel');
+            if (!selectedApi) { panel.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">API를 선택하세요</div></div>'; return; }
+            let html = '';
+            if (routeData) html += `<div class="metadata-card"><div class="metadata-card-header"><span>📍</span><h3>Route</h3><span class="table-badge">APP_API_ROUTE_L</span></div><div class="metadata-card-body"><div class="info-grid"><div class="info-row"><span class="info-label">ROUTE_ID</span><span class="info-value">${routeData.id}</span></div><div class="info-row"><span class="info-label">PATH</span><span class="info-value">${routeData.path}</span></div><div class="info-row"><span class="info-label">METHOD</span><span class="info-value"><span class="badge blue">${routeData.method}</span></span></div><div class="info-row"><span class="info-label">NAME</span><span class="info-value">${routeData.name||'-'}</span></div><div class="info-row"><span class="info-label">USE_YN</span><span class="info-value"><span class="badge ${routeData.is_active?'green':'red'}">${routeData.is_active?'Y':'N'}</span></span></div></div></div></div>`;
+            if (versionData) html += `<div class="metadata-card"><div class="metadata-card-header"><span>📦</span><h3>Version</h3><span class="table-badge">APP_API_VERSION_H</span></div><div class="metadata-card-body"><div class="info-grid"><div class="info-row"><span class="info-label">VERSION_NO</span><span class="info-value"><span class="badge purple">v${versionData.version}</span></span></div><div class="info-row"><span class="info-label">LOGIC_TYPE</span><span class="info-value"><span class="badge blue">${versionData.logic_type}</span></span></div><div class="info-row"><span class="info-label">REQ_SPEC</span><div class="info-value code">${formatJson(versionData.request_spec)||'-'}</div></div><div class="info-row"><span class="info-label">LOGIC_BODY</span><div class="info-value code">${escapeHtml(versionData.logic_body)||'-'}</div></div><div class="info-row"><span class="info-label">SMPL_PARAMS</span><div class="info-value code">${formatJson(versionData.sample_params)||'-'}</div></div></div></div></div>`;
+            html += `<div class="metadata-card"><div class="metadata-card-header"><span>📜</span><h3>Audit</h3><span class="table-badge">APP_API_AUDIT_H</span></div><div class="metadata-card-body"><div class="audit-list">${auditData.length ? auditData.map(l => `<div class="audit-item ${l.action}"><div class="audit-header"><span class="audit-action">${l.action}</span><span class="audit-time">${formatDate(l.created_at)}</span></div><div class="audit-details">${l.actor||''} ${l.actor_ip?`(${l.actor_ip})`:''}</div></div>`).join('') : '<div style="color:var(--text-secondary);text-align:center;padding:16px">로그 없음</div>'}</div></div></div>`;
+            panel.innerHTML = html;
+        }
+        
+        async function loadTables() {
+            try {
+                const res = await fetch('/schema/tables');
+                tables = (await res.json()).data || [];
+                renderTableSelector();
+            } catch (e) { console.error('테이블 로드 실패:', e); }
+        }
+        
+        async function loadLLMModels() {
+            try {
+                const res = await fetch('/schema/llm/models');
+                const data = (await res.json()).data;
+                llmModels = data.models || [];
+                authMethods = data.auth_methods || {};
+                renderLLMModels();
+            } catch (e) { console.error('LLM 모델 로드 실패:', e); }
+        }
+        
+        function renderLLMModels() {
+            const select = document.getElementById('llmModel');
+            const byProvider = {};
+            llmModels.forEach(m => {
+                if (!byProvider[m.provider]) byProvider[m.provider] = [];
+                byProvider[m.provider].push(m);
+            });
+            let html = '';
+            for (const [prov, models] of Object.entries(byProvider)) {
+                html += `<optgroup label="${prov.toUpperCase()}">`;
+                models.forEach(m => { html += `<option value="${m.id}" data-auth="${m.auth}">${m.name}</option>`; });
+                html += '</optgroup>';
+            }
+            select.innerHTML = html;
+            updateAuthFields();
+        }
+        
+        function updateAuthFields() {
+            const select = document.getElementById('llmModel');
+            const option = select.options[select.selectedIndex];
+            const authType = option?.dataset.auth || 'api_key';
+            const method = authMethods[authType];
+            
+            const container = document.getElementById('authFields');
+            if (!method) { container.innerHTML = ''; return; }
+            
+            let html = `<p style="font-size:11px;color:var(--text-secondary);margin-bottom:10px;">${method.description}</p><div class="form-row">`;
+            method.fields.forEach(f => {
+                if (f.type === 'textarea') {
+                    html += `<div class="form-group" style="grid-column:1/-1"><label class="form-label">${f.label}${f.required ? ' <span class="required">*</span>' : ''}</label><textarea class="form-textarea" id="auth_${f.name}" placeholder="${f.default || ''}" style="min-height:60px;"></textarea></div>`;
+                } else {
+                    html += `<div class="form-group"><label class="form-label">${f.label}${f.required ? ' <span class="required">*</span>' : ''}</label><input type="${f.type}" class="form-input" id="auth_${f.name}" placeholder="${f.default || ''}"></div>`;
+                }
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        }
+        
+        function renderTableSelector() {
+            const container = document.getElementById('tableSelector');
+            container.innerHTML = tables.map(t => `<div class="table-item" onclick="toggleTable('${t.table_name}')" id="table-${t.table_name}"><div class="table-item-name">${t.table_name}</div><div class="table-item-info">${t.row_count?.toLocaleString() || 0} rows</div></div>`).join('');
+        }
+        
+        async function toggleTable(name) {
+            const el = document.getElementById(`table-${name}`);
+            if (selectedTables.has(name)) { selectedTables.delete(name); el.classList.remove('selected'); }
+            else { selectedTables.add(name); el.classList.add('selected'); }
+            await updateSchemaPreview();
+        }
+        
+        async function updateSchemaPreview() {
+            const section = document.getElementById('schemaPreviewSection');
+            const container = document.getElementById('schemaPreview');
+            if (selectedTables.size === 0) { section.style.display = 'none'; return; }
+            section.style.display = 'block';
+            container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            
+            let html = '';
+            for (const name of selectedTables) {
+                try {
+                    const res = await fetch(`/schema/tables/${name}?sample_limit=5`);
+                    const data = (await res.json()).data;
+                    const colSamples = data.column_samples || {};
+                    
+                    html += `<div class="schema-table"><div class="schema-table-name">${name}</div><div class="schema-columns">`;
+                    data.columns.forEach(c => {
+                        const samples = colSamples[c.name] || [];
+                        const sampleStr = samples.slice(0, 3).map(v => JSON.stringify(v)).join(', ');
+                        html += `<div class="schema-column"><span class="schema-column-name">${c.name} ${c.key ? `<span style="color:var(--accent-orange)">[${c.key}]</span>` : ''}</span><span class="schema-column-type">${c.type}</span><span class="schema-column-sample" title="${escapeHtml(sampleStr)}">${escapeHtml(sampleStr) || '-'}</span></div>`;
+                    });
+                    html += '</div></div>';
+                } catch {}
+            }
+            container.innerHTML = html;
+        }
+        
+        async function generateWithLLM() {
+            if (selectedTables.size === 0) { alert('테이블을 선택하세요'); return; }
+            const intent = document.getElementById('llmIntent').value.trim();
+            if (!intent) { alert('의도를 입력하세요'); return; }
+            
+            const btn = document.getElementById('llmGenerateBtn');
+            btn.disabled = true; btn.textContent = '🔄 생성 중...';
+            document.getElementById('llmResult').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            
+            const body = {
+                user_intent: intent,
+                table_names: Array.from(selectedTables),
+                method: document.getElementById('llmMethod').value,
+                model: document.getElementById('llmModel').value,
+                temperature: parseFloat(document.getElementById('llmTemp').value),
+                max_tokens: parseInt(document.getElementById('llmMaxTokens').value),
+                top_p: parseFloat(document.getElementById('llmTopP').value),
+            };
+            
+            // 인증 정보 추가
+            const apiKeyEl = document.getElementById('auth_api_key');
+            if (apiKeyEl?.value) body.api_key = apiKeyEl.value;
+            const apiBaseEl = document.getElementById('auth_api_base');
+            if (apiBaseEl?.value) body.api_base = apiBaseEl.value;
+            const vertexEl = document.getElementById('auth_vertex_credentials');
+            if (vertexEl?.value) body.vertex_credentials = vertexEl.value;
+            
+            try {
+                const res = await fetch('/schema/llm/generate-api', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                const result = await res.json();
+                if (!res.ok) throw new Error(result.detail?.message || 'LLM 호출 실패');
+                
+                const spec = result.data;
+                document.getElementById('llmResult').innerHTML = `<div class="generated-result"><h4>✅ 생성된 API 스펙</h4>
+                    <div class="generated-field"><div class="generated-field-label">경로</div><div class="generated-field-value">${spec.method} /api/${spec.path}</div></div>
+                    <div class="generated-field"><div class="generated-field-label">이름</div><div class="generated-field-value">${spec.name}</div></div>
+                    <div class="generated-field"><div class="generated-field-label">설명</div><div class="generated-field-value">${spec.description}</div></div>
+                    <div class="generated-field"><div class="generated-field-label">요청 스펙</div><div class="generated-field-value">${formatJson(spec.request_spec)}</div></div>
+                    <div class="generated-field"><div class="generated-field-label">로직</div><div class="generated-field-value">${escapeHtml(spec.logic_body)}</div></div>
+                    <div class="generated-field"><div class="generated-field-label">샘플 파라미터</div><div class="generated-field-value">${formatJson(spec.sample_params)}</div></div>
+                    <button class="submit-btn" onclick="applyGeneratedSpec(${JSON.stringify(spec).replace(/"/g, '&quot;')})">✓ 이 스펙으로 API 생성</button></div>`;
+            } catch (e) {
+                document.getElementById('llmResult').innerHTML = `<div class="alert warning">❌ ${e.message}</div>`;
+            } finally {
+                btn.disabled = false; btn.textContent = '🤖 API 생성';
+            }
+        }
+        
+        function applyGeneratedSpec(spec) {
+            document.getElementById('newPath').value = spec.path;
+            document.getElementById('newMethod').value = spec.method;
+            document.getElementById('newName').value = spec.name;
+            document.getElementById('newTags').value = spec.tags || '';
+            document.getElementById('newLogicType').value = spec.logic_type;
+            document.getElementById('newLogicBody').value = spec.logic_body;
+            document.getElementById('newRequestSpec').value = formatJson(spec.request_spec);
+            document.getElementById('newSampleParams').value = formatJson(spec.sample_params);
+            document.getElementById('newChangeNote').value = spec.change_note || '초기 버전';
+            openAddModal();
+        }
+        
+        async function createApi() {
+            if (!newApiTestPassed) { alert('먼저 테스트를 통과해야 합니다.'); return; }
+            const path = document.getElementById('newPath').value.trim();
+            const method = document.getElementById('newMethod').value;
+            const name = document.getElementById('newName').value.trim();
+            const tags = document.getElementById('newTags').value.trim();
+            const logicType = document.getElementById('newLogicType').value;
+            const logicBody = document.getElementById('newLogicBody').value.trim();
+            const changeNote = document.getElementById('newChangeNote').value.trim() || '초기 버전';
+            let requestSpec = null, sampleParams = null;
+            try { const t = document.getElementById('newRequestSpec').value.trim(); if (t) requestSpec = JSON.parse(t); } catch { alert('요청 스펙 JSON 오류'); return; }
+            try { const t = document.getElementById('newSampleParams').value.trim(); if (t) sampleParams = JSON.parse(t); } catch { alert('샘플 파라미터 JSON 오류'); return; }
+            
+            try {
+                const routeRes = await fetch('/admin/routes', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY }, body: JSON.stringify({ path, method, name, tags: tags || null }) });
+                if (!routeRes.ok) throw new Error((await routeRes.json()).detail?.message || 'API 생성 실패');
+                const routeId = (await routeRes.json()).data.id;
+                
+                const versionRes = await fetch(`/admin/routes/${routeId}/versions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY }, body: JSON.stringify({ route_id: routeId, logic_type: logicType, logic_body: logicBody, request_spec: requestSpec, sample_params: sampleParams, change_note: changeNote }) });
+                if (!versionRes.ok) throw new Error((await versionRes.json()).detail?.message || '버전 생성 실패');
+                
+                alert('✅ API 생성 완료!');
+                closeAddModal();
+                document.getElementById('createApiForm').reset();
+                newApiTestPassed = false; updateCreateBtn();
+                await loadApis();
+                await selectApi(routeId);
+            } catch (e) { alert('❌ ' + e.message); }
+        }
+        
+        async function createVersion() {
+            if (!versionTestPassed) { alert('먼저 테스트를 통과해야 합니다.'); return; }
+            if (!selectedApi) return;
+            const logicType = document.getElementById('versionLogicType').value;
+            const changeNote = document.getElementById('versionChangeNote').value.trim();
+            const logicBody = document.getElementById('versionLogicBody').value.trim();
+            let requestSpec = null, sampleParams = null;
+            try { const t = document.getElementById('versionRequestSpec').value.trim(); if (t) requestSpec = JSON.parse(t); } catch { alert('JSON 오류'); return; }
+            try { const t = document.getElementById('versionSampleParams').value.trim(); if (t) sampleParams = JSON.parse(t); } catch { alert('JSON 오류'); return; }
+            
+            try {
+                const res = await fetch(`/admin/routes/${selectedApi.id}/versions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY }, body: JSON.stringify({ route_id: selectedApi.id, logic_type: logicType, logic_body: logicBody, request_spec: requestSpec, sample_params: sampleParams, change_note: changeNote }) });
+                if (!res.ok) throw new Error((await res.json()).detail?.message || '버전 생성 실패');
+                const result = await res.json();
+                alert(`✅ v${result.data.version} 생성 완료!`);
+                await selectApi(selectedApi.id);
+                switchTab('metadata');
+            } catch (e) { alert('❌ ' + e.message); }
+        }
+        
+        async function sendRequest() {
+            if (!selectedApi) { alert('API를 선택하세요'); return; }
+            const responseBody = document.getElementById('responseBody');
+            responseBody.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            const startTime = performance.now();
+            try {
+                const params = {};
+                const reqSpec = selectedApi.version?.request_spec || {};
+                for (const key of Object.keys(reqSpec)) {
+                    const input = document.getElementById(`param-${key}`);
+                    if (input?.value) {
+                        const spec = reqSpec[key];
+                        let val = input.value;
+                        if (spec.type === 'int') val = parseInt(val);
+                        else if (spec.type === 'float') val = parseFloat(val);
+                        else if (spec.type === 'bool') val = val === 'true';
+                        params[key] = val;
+                    }
+                }
+                let url = `/api/${selectedApi.path}`;
+                let response;
+                if (selectedApi.method === 'GET') {
+                    const qs = new URLSearchParams(params).toString();
+                    if (qs) url += '?' + qs;
+                    response = await fetch(url);
+                } else {
+                    response = await fetch(url, { method: selectedApi.method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params) });
+                }
+                responseData = await response.json();
+                const duration = Math.round(performance.now() - startTime);
+                const statusBadge = document.getElementById('statusBadge');
+                statusBadge.textContent = response.status;
+                statusBadge.className = 'status-badge ' + (response.ok ? 'success' : 'error');
+                document.getElementById('responseTime').textContent = `${duration}ms`;
+                document.getElementById('responseStatus').style.display = 'flex';
+                document.getElementById('viewToggle').style.display = 'flex';
+                renderResponse();
+            } catch (e) { responseBody.innerHTML = `<pre style="color:var(--accent-red)">Error: ${e.message}</pre>`; }
+        }
+        
+        function setViewMode(mode) {
+            viewMode = mode;
+            document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+            document.querySelector(`.view-toggle button:${mode === 'json' ? 'first' : 'last'}-child`).classList.add('active');
+            renderResponse();
+        }
+        
+        function renderResponse() {
+            const container = document.getElementById('responseBody');
+            if (!responseData) return;
+            if (viewMode === 'json') {
+                container.innerHTML = '<pre>' + syntaxHighlight(JSON.stringify(responseData, null, 2)) + '</pre>';
+            } else {
+                container.innerHTML = '<div class="table-view">' + renderAsTable(responseData) + '</div>';
+            }
+        }
+        
+        function renderAsTable(data, title = '') {
+            if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object') {
+                const cols = Object.keys(data[0]);
+                let html = title ? `<div class="table-title">${title}</div>` : '';
+                html += '<table class="data-table"><thead><tr>';
+                cols.forEach(c => html += `<th>${c}</th>`);
+                html += '</tr></thead><tbody>';
+                data.forEach(row => {
+                    html += '<tr>';
+                    cols.forEach(c => {
+                        let val = row[c];
+                        if (typeof val === 'object' && val !== null) val = JSON.stringify(val);
+                        html += `<td title="${escapeHtml(String(val))}">${escapeHtml(String(val ?? ''))}</td>`;
+                    });
+                    html += '</tr>';
+                });
+                html += '</tbody></table>';
+                return html;
+            } else if (typeof data === 'object' && data !== null) {
+                let html = '';
+                for (const [key, val] of Object.entries(data)) {
+                    if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object') {
+                        html += renderAsTable(val, key);
+                    } else if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+                        html += renderAsTable(val, key);
+                    }
+                }
+                if (!html) html = '<pre>' + syntaxHighlight(JSON.stringify(data, null, 2)) + '</pre>';
+                return html;
+            }
+            return '<pre>' + escapeHtml(String(data)) + '</pre>';
+        }
+        
+        function formatDate(str) { return str ? new Date(str).toLocaleString('ko-KR') : '-'; }
+        function formatJson(obj) { try { return obj ? JSON.stringify(obj, null, 2) : ''; } catch { return ''; }}
+        function escapeHtml(str) { return str ? str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }
+        function syntaxHighlight(json) {
+            return json.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, m => {
+                let cls = 'json-number';
+                if (/^"/.test(m)) cls = /:$/.test(m) ? 'json-key' : 'json-string';
+                else if (/true|false/.test(m)) cls = 'json-boolean';
+                else if (/null/.test(m)) cls = 'json-null';
+                return `<span class="${cls}">${m}</span>`;
+            });
+        }
+        
+        document.getElementById('searchInput').addEventListener('input', e => renderApiList(e.target.value));
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAddModal(); });
+        loadApis();
+    </script>
+</body>
+</html>
+

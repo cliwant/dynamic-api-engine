@@ -1,0 +1,25 @@
+# FastAPI & Server
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+
+# Database (Async MySQL)
+sqlalchemy==2.0.25
+aiomysql==0.2.0
+pymysql==1.1.0
+
+# Validation & Serialization
+pydantic==2.6.1
+pydantic-settings==2.1.0
+
+# Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# Utilities
+python-dotenv==1.0.1
+httpx==0.26.0
+
+# LLM Integration
+litellm==1.30.0
+
