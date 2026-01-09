@@ -28,6 +28,10 @@ from app.services.llm_service import (
     SqlOptimizationRequest,
     TestCaseGenerationRequest,
     NaturalLanguageQueryRequest,
+    # 자연어 → SQL 쿼리 생성
+    generate_sql_from_natural_language,
+    NaturalLanguageToSqlRequest,
+    check_sql_security,
 )
 
 router = APIRouter(prefix="/schema", tags=["Schema & LLM"])
@@ -665,3 +669,204 @@ async def chat_api_endpoint(
             status_code=500,
             detail={"error": "LLM_ERROR", "message": str(e)}
         )
+
+
+# ==================== 자연어 → SQL 쿼리 생성 ====================
+
+class NaturalLanguageQueryGenerateRequest(BaseModel):
+    """자연어 → SQL 생성 요청"""
+    question: str
+    table_names: list[str] = []  # 빈 리스트면 모든 테이블 사용
+    max_rows: int = 100
+    allow_joins: bool = True
+    auto_execute: bool = False  # 보안 검사 통과 시 자동 실행
+    model: str = "vertex_ai/gemini-2.5-flash"
+    api_key: Optional[str] = None
+
+
+@router.post(
+    "/ai/query",
+    summary="자연어로 SQL 쿼리 생성 및 실행",
+    description="""
+    자연어 질문을 분석하여 안전한 SQL 쿼리를 생성하고 선택적으로 실행합니다.
+    
+    ## 보안 검증
+    - SQL Injection 패턴 감지 및 차단
+    - DDL 명령어 (DROP, CREATE, ALTER 등) 차단
+    - DML 명령어 (INSERT, UPDATE, DELETE) 차단
+    - 민감 테이블/컬럼 접근 차단
+    - 악의적 의도 키워드 감지
+    - LIMIT 강제 적용
+    
+    ## 예시
+    - "회사 목록 보여줘"
+    - "최근 가입한 사용자 10명"
+    - "서울에 있는 회사들"
+    - "2024년에 생성된 프로젝트"
+    """,
+    response_model=ResponseBase,
+)
+async def generate_and_execute_query(
+    request: NaturalLanguageQueryGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """자연어를 SQL 쿼리로 변환하고 실행"""
+    
+    # 1. 테이블 스키마 정보 조회
+    if request.table_names:
+        # 지정된 테이블만
+        tables = []
+        for table_name in request.table_names:
+            try:
+                table_info = await schema_service.get_table_full_schema(db, table_name, sample_limit=5)
+                tables.append(TableSchema(
+                    table_name=table_name,
+                    columns=table_info["columns"],
+                    indexes=table_info.get("indexes", []),
+                    sample_data=table_info.get("sample_data", []),
+                ))
+            except Exception:
+                pass  # 없는 테이블은 무시
+    else:
+        # 모든 테이블 조회 (최대 20개)
+        all_tables = await schema_service.get_table_list(db)
+        tables = []
+        for table_info in all_tables[:20]:  # 최대 20개 테이블
+            table_name = table_info.get("table_name", table_info.get("TABLE_NAME"))
+            if table_name:
+                try:
+                    full_schema = await schema_service.get_table_full_schema(db, table_name, sample_limit=3)
+                    tables.append(TableSchema(
+                        table_name=table_name,
+                        columns=full_schema["columns"],
+                        indexes=full_schema.get("indexes", []),
+                        sample_data=full_schema.get("sample_data", []),
+                    ))
+                except Exception:
+                    pass
+    
+    if not tables:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "NO_TABLES", "message": "사용 가능한 테이블이 없습니다."}
+        )
+    
+    # 2. LLM을 통해 SQL 쿼리 생성
+    try:
+        llm_request = NaturalLanguageToSqlRequest(
+            question=request.question,
+            tables=tables,
+            max_rows=request.max_rows,
+            allow_joins=request.allow_joins,
+            read_only=True,
+        )
+        
+        config = LLMConfig(
+            model=request.model,
+            api_key=request.api_key,
+        )
+        
+        result = await generate_sql_from_natural_language(llm_request, config)
+        
+        response_data = {
+            "question": result.original_question,
+            "sql_query": result.sql_query,
+            "explanation": result.explanation,
+            "tables_used": result.tables_used,
+            "security_check": {
+                "is_safe": result.security_check.is_safe,
+                "risk_level": result.security_check.risk_level,
+                "violations": result.security_check.violations,
+                "blocked_reason": result.security_check.blocked_reason,
+            },
+            "execution_allowed": result.execution_allowed,
+            "warnings": result.warnings,
+            "execution_result": None,
+        }
+        
+        # 3. 자동 실행 (보안 검사 통과 시)
+        if request.auto_execute and result.execution_allowed and result.sql_query:
+            try:
+                # SQL 실행
+                query_result = await db.execute(text(result.sql_query))
+                rows = query_result.fetchall()
+                columns = query_result.keys()
+                
+                # 결과를 딕셔너리 리스트로 변환
+                data = []
+                for row in rows:
+                    row_dict = {}
+                    for idx, col in enumerate(columns):
+                        value = row[idx]
+                        # datetime 처리
+                        if hasattr(value, 'isoformat'):
+                            value = value.isoformat()
+                        row_dict[col] = value
+                    data.append(row_dict)
+                
+                response_data["execution_result"] = {
+                    "success": True,
+                    "row_count": len(data),
+                    "columns": list(columns),
+                    "data": data,
+                }
+                
+            except Exception as exec_error:
+                response_data["execution_result"] = {
+                    "success": False,
+                    "error": str(exec_error),
+                }
+        
+        message = "쿼리가 생성되었습니다."
+        if not result.execution_allowed:
+            message = f"⚠️ 보안 검사 실패: {result.security_check.blocked_reason}"
+        elif response_data["execution_result"]:
+            if response_data["execution_result"]["success"]:
+                message = f"쿼리 실행 완료: {response_data['execution_result']['row_count']}건 조회"
+            else:
+                message = f"쿼리 실행 실패: {response_data['execution_result']['error']}"
+        
+        return ResponseBase(
+            message=message,
+            data=response_data,
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "SQL_GENERATION_ERROR", "message": str(e)}
+        )
+
+
+@router.post(
+    "/ai/security-check",
+    summary="SQL 보안 검사",
+    description="""
+    SQL 쿼리의 보안 위험을 분석합니다.
+    
+    ## 검사 항목
+    - SQL Injection 패턴
+    - DDL 명령어 (DROP, CREATE, ALTER, TRUNCATE)
+    - 위험한 DML (DELETE, UPDATE, INSERT)
+    - 민감 테이블/컬럼 접근
+    - 시스템 테이블 접근
+    """,
+    response_model=ResponseBase,
+)
+async def check_query_security(
+    sql_query: str,
+    original_question: str = "",
+):
+    """SQL 쿼리 보안 검사"""
+    result = check_sql_security(sql_query, original_question)
+    
+    return ResponseBase(
+        message="보안 검사가 완료되었습니다." if result.is_safe else "⚠️ 보안 위험이 감지되었습니다.",
+        data={
+            "is_safe": result.is_safe,
+            "risk_level": result.risk_level,
+            "violations": result.violations,
+            "blocked_reason": result.blocked_reason,
+            "sanitized_query": result.sanitized_query,
+        }
+    )

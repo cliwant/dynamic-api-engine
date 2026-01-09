@@ -705,3 +705,591 @@ async def process_natural_language_query(
         raise ValueError(f"LLM 응답을 JSON으로 파싱할 수 없습니다: {e}")
     except Exception as e:
         raise RuntimeError(f"LLM 호출 실패: {e}")
+
+
+# ============================================================================
+# 자연어 → SQL 쿼리 생성 및 보안 검증 시스템
+# ============================================================================
+
+import re
+from enum import Enum
+from dataclasses import dataclass
+
+
+class SecurityRiskLevel(str, Enum):
+    """보안 위험 수준"""
+    SAFE = "safe"           # 안전
+    LOW = "low"             # 낮은 위험
+    MEDIUM = "medium"       # 중간 위험
+    HIGH = "high"           # 높은 위험 (차단)
+    CRITICAL = "critical"   # 치명적 위험 (즉시 차단)
+
+
+class SecurityViolationType(str, Enum):
+    """보안 위반 유형"""
+    SQL_INJECTION = "sql_injection"
+    DDL_COMMAND = "ddl_command"
+    DANGEROUS_DML = "dangerous_dml"
+    SENSITIVE_DATA = "sensitive_data"
+    SYSTEM_TABLE = "system_table"
+    MALICIOUS_INTENT = "malicious_intent"
+    EXCESSIVE_SCOPE = "excessive_scope"
+    PROHIBITED_KEYWORD = "prohibited_keyword"
+
+
+@dataclass
+class SecurityViolation:
+    """보안 위반 정보"""
+    violation_type: SecurityViolationType
+    risk_level: SecurityRiskLevel
+    description: str
+    matched_pattern: str = ""
+
+
+class NaturalLanguageToSqlRequest(BaseModel):
+    """자연어 → SQL 변환 요청"""
+    question: str
+    tables: list[TableSchema]
+    max_rows: int = 100  # 최대 반환 행 수
+    allow_joins: bool = True  # JOIN 허용 여부
+    read_only: bool = True  # SELECT만 허용
+
+
+class SqlSecurityCheckResult(BaseModel):
+    """SQL 보안 검사 결과"""
+    is_safe: bool
+    risk_level: str
+    violations: list[dict]
+    sanitized_query: Optional[str] = None
+    blocked_reason: Optional[str] = None
+
+
+class GeneratedSqlResult(BaseModel):
+    """생성된 SQL 쿼리 결과"""
+    original_question: str
+    sql_query: str
+    explanation: str
+    tables_used: list[str]
+    estimated_rows: Optional[int] = None
+    security_check: SqlSecurityCheckResult
+    execution_allowed: bool
+    warnings: list[str] = []
+
+
+# 민감 테이블 패턴 (정규식)
+SENSITIVE_TABLE_PATTERNS = [
+    r".*password.*",
+    r".*passwd.*",
+    r".*secret.*",
+    r".*token.*",
+    r".*credential.*",
+    r".*api_key.*",
+    r".*private.*",
+    r".*admin.*",
+    r".*auth.*",
+    r".*session.*",
+    r".*payment.*",
+    r".*credit.*card.*",
+    r".*bank.*",
+    r".*ssn.*",  # Social Security Number
+    r".*주민.*번호.*",
+]
+
+# 민감 컬럼 패턴
+SENSITIVE_COLUMN_PATTERNS = [
+    r".*password.*",
+    r".*passwd.*",
+    r".*pwd.*",
+    r".*secret.*",
+    r".*token.*",
+    r".*api_key.*",
+    r".*private_key.*",
+    r".*credit.*card.*",
+    r".*cvv.*",
+    r".*ssn.*",
+    r".*주민.*번호.*",
+    r".*계좌.*번호.*",
+    r".*카드.*번호.*",
+    r".*비밀번호.*",
+]
+
+# SQL Injection 패턴
+SQL_INJECTION_PATTERNS = [
+    r";\s*--",                          # ; --
+    r"'\s*OR\s+'?1'?\s*=\s*'?1",       # ' OR '1'='1
+    r"'\s*OR\s+''='",                   # ' OR ''='
+    r"UNION\s+SELECT",                  # UNION SELECT
+    r"UNION\s+ALL\s+SELECT",           # UNION ALL SELECT
+    r"'\s*;\s*DROP",                    # '; DROP
+    r"'\s*;\s*DELETE",                  # '; DELETE
+    r"'\s*;\s*UPDATE",                  # '; UPDATE
+    r"'\s*;\s*INSERT",                  # '; INSERT
+    r"EXEC\s*\(",                       # EXEC(
+    r"EXECUTE\s*\(",                    # EXECUTE(
+    r"xp_cmdshell",                     # xp_cmdshell
+    r"INTO\s+OUTFILE",                  # INTO OUTFILE
+    r"INTO\s+DUMPFILE",                 # INTO DUMPFILE
+    r"LOAD_FILE\s*\(",                  # LOAD_FILE(
+    r"BENCHMARK\s*\(",                  # BENCHMARK(
+    r"SLEEP\s*\(",                      # SLEEP(
+    r"WAITFOR\s+DELAY",                 # WAITFOR DELAY
+    r"0x[0-9a-fA-F]+",                  # Hex encoding
+]
+
+# 금지된 DDL 명령어
+PROHIBITED_DDL_COMMANDS = [
+    "DROP",
+    "CREATE",
+    "ALTER",
+    "TRUNCATE",
+    "RENAME",
+    "GRANT",
+    "REVOKE",
+]
+
+# 금지된 DML 명령어 (조건 없이 사용 시)
+DANGEROUS_DML_COMMANDS = [
+    "DELETE",
+    "UPDATE",
+    "INSERT",
+    "REPLACE",
+]
+
+# 시스템 테이블 패턴
+SYSTEM_TABLE_PATTERNS = [
+    r"^information_schema\.",
+    r"^mysql\.",
+    r"^performance_schema\.",
+    r"^sys\.",
+]
+
+# 악의적 의도 키워드
+MALICIOUS_INTENT_KEYWORDS = [
+    "삭제해줘",
+    "지워줘",
+    "모두 삭제",
+    "전부 삭제",
+    "데이터 삭제",
+    "테이블 삭제",
+    "drop",
+    "delete all",
+    "remove all",
+    "비밀번호 보여줘",
+    "password 조회",
+    "토큰 보여줘",
+    "api key",
+    "해킹",
+    "취약점",
+    "우회",
+    "injection",
+]
+
+
+def check_sql_security(sql_query: str, original_question: str = "") -> SqlSecurityCheckResult:
+    """
+    SQL 쿼리 보안 검사
+    
+    검사 항목:
+    1. SQL Injection 패턴
+    2. DDL 명령어
+    3. 위험한 DML 명령어
+    4. 민감 테이블/컬럼 접근
+    5. 시스템 테이블 접근
+    6. 악의적 의도
+    """
+    violations = []
+    sql_upper = sql_query.upper().strip()
+    question_lower = original_question.lower()
+    
+    # 1. SQL Injection 패턴 검사
+    for pattern in SQL_INJECTION_PATTERNS:
+        if re.search(pattern, sql_query, re.IGNORECASE):
+            violations.append(SecurityViolation(
+                violation_type=SecurityViolationType.SQL_INJECTION,
+                risk_level=SecurityRiskLevel.CRITICAL,
+                description="SQL Injection 패턴이 감지되었습니다.",
+                matched_pattern=pattern
+            ))
+    
+    # 2. DDL 명령어 검사
+    for cmd in PROHIBITED_DDL_COMMANDS:
+        if re.search(rf'\b{cmd}\b', sql_upper):
+            violations.append(SecurityViolation(
+                violation_type=SecurityViolationType.DDL_COMMAND,
+                risk_level=SecurityRiskLevel.CRITICAL,
+                description=f"금지된 DDL 명령어 '{cmd}'가 감지되었습니다.",
+                matched_pattern=cmd
+            ))
+    
+    # 3. 위험한 DML 명령어 검사 (SELECT 외의 명령어)
+    for cmd in DANGEROUS_DML_COMMANDS:
+        if re.search(rf'\b{cmd}\b', sql_upper):
+            violations.append(SecurityViolation(
+                violation_type=SecurityViolationType.DANGEROUS_DML,
+                risk_level=SecurityRiskLevel.HIGH,
+                description=f"위험한 DML 명령어 '{cmd}'가 감지되었습니다. 읽기 전용 쿼리만 허용됩니다.",
+                matched_pattern=cmd
+            ))
+    
+    # 4. 민감 테이블 접근 검사
+    for pattern in SENSITIVE_TABLE_PATTERNS:
+        if re.search(pattern, sql_query, re.IGNORECASE):
+            violations.append(SecurityViolation(
+                violation_type=SecurityViolationType.SENSITIVE_DATA,
+                risk_level=SecurityRiskLevel.HIGH,
+                description="민감한 데이터 테이블에 대한 접근이 감지되었습니다.",
+                matched_pattern=pattern
+            ))
+    
+    # 5. 민감 컬럼 접근 검사
+    for pattern in SENSITIVE_COLUMN_PATTERNS:
+        if re.search(pattern, sql_query, re.IGNORECASE):
+            violations.append(SecurityViolation(
+                violation_type=SecurityViolationType.SENSITIVE_DATA,
+                risk_level=SecurityRiskLevel.HIGH,
+                description="민감한 데이터 컬럼에 대한 접근이 감지되었습니다.",
+                matched_pattern=pattern
+            ))
+    
+    # 6. 시스템 테이블 접근 검사
+    for pattern in SYSTEM_TABLE_PATTERNS:
+        if re.search(pattern, sql_query, re.IGNORECASE):
+            violations.append(SecurityViolation(
+                violation_type=SecurityViolationType.SYSTEM_TABLE,
+                risk_level=SecurityRiskLevel.MEDIUM,
+                description="시스템 테이블에 대한 접근이 감지되었습니다.",
+                matched_pattern=pattern
+            ))
+    
+    # 7. 악의적 의도 검사 (원본 질문)
+    for keyword in MALICIOUS_INTENT_KEYWORDS:
+        if keyword.lower() in question_lower:
+            violations.append(SecurityViolation(
+                violation_type=SecurityViolationType.MALICIOUS_INTENT,
+                risk_level=SecurityRiskLevel.HIGH,
+                description=f"악의적 의도가 의심되는 키워드 '{keyword}'가 감지되었습니다.",
+                matched_pattern=keyword
+            ))
+    
+    # 8. SELECT 문이 아닌 경우 (읽기 전용 모드)
+    if not sql_upper.startswith("SELECT"):
+        violations.append(SecurityViolation(
+            violation_type=SecurityViolationType.DANGEROUS_DML,
+            risk_level=SecurityRiskLevel.HIGH,
+            description="SELECT 문이 아닙니다. 읽기 전용 쿼리만 허용됩니다.",
+            matched_pattern="NON_SELECT"
+        ))
+    
+    # 위험 수준 결정
+    if any(v.risk_level == SecurityRiskLevel.CRITICAL for v in violations):
+        overall_risk = SecurityRiskLevel.CRITICAL
+    elif any(v.risk_level == SecurityRiskLevel.HIGH for v in violations):
+        overall_risk = SecurityRiskLevel.HIGH
+    elif any(v.risk_level == SecurityRiskLevel.MEDIUM for v in violations):
+        overall_risk = SecurityRiskLevel.MEDIUM
+    elif any(v.risk_level == SecurityRiskLevel.LOW for v in violations):
+        overall_risk = SecurityRiskLevel.LOW
+    else:
+        overall_risk = SecurityRiskLevel.SAFE
+    
+    is_safe = overall_risk == SecurityRiskLevel.SAFE
+    blocked_reason = None
+    
+    if not is_safe:
+        blocked_reason = "; ".join([v.description for v in violations[:3]])  # 상위 3개 이유
+    
+    return SqlSecurityCheckResult(
+        is_safe=is_safe,
+        risk_level=overall_risk.value,
+        violations=[{
+            "type": v.violation_type.value,
+            "risk_level": v.risk_level.value,
+            "description": v.description,
+            "pattern": v.matched_pattern
+        } for v in violations],
+        sanitized_query=sql_query if is_safe else None,
+        blocked_reason=blocked_reason
+    )
+
+
+def check_question_intent(question: str) -> tuple[bool, list[str]]:
+    """
+    사용자 질문의 의도를 검사하여 악의적인지 판단
+    
+    Returns:
+        (is_safe, warnings): 안전 여부와 경고 메시지 목록
+    """
+    warnings = []
+    question_lower = question.lower()
+    
+    # 악의적 의도 키워드 검사
+    for keyword in MALICIOUS_INTENT_KEYWORDS:
+        if keyword.lower() in question_lower:
+            return False, [f"'{keyword}'와 관련된 요청은 처리할 수 없습니다."]
+    
+    # 데이터 수정/삭제 의도 검사
+    modification_patterns = [
+        (r"삭제|지우|제거|drop|delete|remove", "데이터 삭제"),
+        (r"수정|변경|업데이트|update|modify|change", "데이터 수정"),
+        (r"추가|입력|삽입|insert|add|create", "데이터 추가"),
+    ]
+    
+    for pattern, description in modification_patterns:
+        if re.search(pattern, question_lower):
+            warnings.append(f"'{description}' 관련 요청은 읽기 전용 모드에서 처리되지 않습니다.")
+    
+    # 민감 정보 요청 검사
+    sensitive_patterns = [
+        (r"비밀번호|password|pwd|passwd", "비밀번호"),
+        (r"주민.*번호|ssn|social.*security", "주민등록번호"),
+        (r"카드.*번호|credit.*card|cvv", "카드번호"),
+        (r"계좌.*번호|bank.*account", "계좌번호"),
+        (r"토큰|token|api.*key|secret", "인증 토큰"),
+    ]
+    
+    for pattern, description in sensitive_patterns:
+        if re.search(pattern, question_lower):
+            return False, [f"'{description}' 관련 민감 정보는 조회할 수 없습니다."]
+    
+    return True, warnings
+
+
+def sanitize_sql_query(sql_query: str, max_rows: int = 100) -> str:
+    """
+    SQL 쿼리 정제 및 LIMIT 강제 적용
+    """
+    sql_query = sql_query.strip()
+    
+    # 세미콜론 제거 (다중 쿼리 방지)
+    sql_query = sql_query.rstrip(';')
+    
+    # 주석 제거
+    sql_query = re.sub(r'--.*$', '', sql_query, flags=re.MULTILINE)
+    sql_query = re.sub(r'/\*.*?\*/', '', sql_query, flags=re.DOTALL)
+    
+    # LIMIT 강제 적용
+    sql_upper = sql_query.upper()
+    if "LIMIT" not in sql_upper:
+        sql_query = f"{sql_query} LIMIT {max_rows}"
+    else:
+        # 기존 LIMIT 값이 max_rows보다 크면 제한
+        limit_match = re.search(r'LIMIT\s+(\d+)', sql_upper)
+        if limit_match:
+            current_limit = int(limit_match.group(1))
+            if current_limit > max_rows:
+                sql_query = re.sub(
+                    r'LIMIT\s+\d+',
+                    f'LIMIT {max_rows}',
+                    sql_query,
+                    flags=re.IGNORECASE
+                )
+    
+    return sql_query
+
+
+def _build_natural_language_to_sql_prompt(request: NaturalLanguageToSqlRequest) -> str:
+    """자연어 → SQL 변환 프롬프트 생성"""
+    
+    # 테이블 스키마 정보 구성
+    tables_info = []
+    for table in request.tables:
+        columns_str = "\n      ".join([
+            f"- {col.get('column_name', col.get('name', 'unknown'))}: "
+            f"{col.get('data_type', col.get('type', 'unknown'))} "
+            f"{'(PK)' if col.get('is_primary_key') or col.get('column_key') == 'PRI' else ''} "
+            f"{'(nullable)' if col.get('is_nullable') == 'YES' else ''}"
+            f"{' - ' + col.get('column_comment', '') if col.get('column_comment') else ''}"
+            for col in table.columns
+        ])
+        
+        sample_str = ""
+        if table.sample_data:
+            sample_str = f"\n    샘플 데이터 (최대 3행):\n      {json.dumps(table.sample_data[:3], ensure_ascii=False, indent=6)}"
+        
+        tables_info.append(f"""
+    테이블: {table.table_name}
+    컬럼:
+      {columns_str}{sample_str}
+""")
+    
+    tables_schema = "\n".join(tables_info)
+    
+    return f"""사용자의 자연어 질문을 분석하여 안전한 MySQL SELECT 쿼리를 생성하세요.
+
+## 사용 가능한 테이블
+{tables_schema}
+
+## 사용자 질문
+"{request.question}"
+
+## 규칙 (반드시 준수)
+1. **SELECT 문만 생성**: 절대로 INSERT, UPDATE, DELETE, DROP 등 데이터 수정 쿼리를 생성하지 마세요.
+2. **민감 정보 제외**: 비밀번호, 토큰, 카드번호, 주민번호 등 민감한 컬럼은 SELECT에서 제외하세요.
+3. **LIMIT 적용**: 결과 행 수를 {request.max_rows}개로 제한하세요.
+4. **명확한 컬럼 선택**: SELECT *는 피하고, 필요한 컬럼만 명시하세요.
+5. **JOIN 제한**: {"JOIN을 사용할 수 있습니다." if request.allow_joins else "JOIN은 사용하지 마세요."}
+6. **안전한 WHERE 절**: 사용자 입력값은 파라미터로 처리될 것이므로 직접 값을 넣어도 됩니다.
+
+## 응답 형식 (JSON)
+```json
+{{
+  "sql_query": "생성된 SELECT 쿼리",
+  "explanation": "쿼리 설명 (한국어)",
+  "tables_used": ["사용된 테이블 목록"],
+  "estimated_rows": null,
+  "warnings": ["주의사항 목록"],
+  "confidence": 0.0~1.0
+}}
+```
+
+## 처리할 수 없는 요청의 경우
+```json
+{{
+  "sql_query": null,
+  "explanation": "처리할 수 없는 이유",
+  "tables_used": [],
+  "estimated_rows": null,
+  "warnings": ["경고 메시지"],
+  "confidence": 0.0
+}}
+```"""
+
+
+async def generate_sql_from_natural_language(
+    request: NaturalLanguageToSqlRequest,
+    config: LLMConfig = LLMConfig()
+) -> GeneratedSqlResult:
+    """
+    자연어를 SQL 쿼리로 변환
+    
+    보안 검증 프로세스:
+    1. 사용자 질문 의도 검사
+    2. LLM을 통한 SQL 생성
+    3. 생성된 SQL 보안 검사
+    4. SQL 정제 및 LIMIT 적용
+    """
+    if not LITELLM_AVAILABLE:
+        raise ImportError("litellm 라이브러리가 설치되어 있지 않습니다.")
+    
+    # 1단계: 사용자 질문 의도 검사
+    is_question_safe, intent_warnings = check_question_intent(request.question)
+    
+    if not is_question_safe:
+        return GeneratedSqlResult(
+            original_question=request.question,
+            sql_query="",
+            explanation=intent_warnings[0] if intent_warnings else "요청을 처리할 수 없습니다.",
+            tables_used=[],
+            security_check=SqlSecurityCheckResult(
+                is_safe=False,
+                risk_level=SecurityRiskLevel.HIGH.value,
+                violations=[{
+                    "type": SecurityViolationType.MALICIOUS_INTENT.value,
+                    "risk_level": SecurityRiskLevel.HIGH.value,
+                    "description": intent_warnings[0] if intent_warnings else "악의적 의도 감지",
+                    "pattern": ""
+                }],
+                blocked_reason=intent_warnings[0] if intent_warnings else "요청이 차단되었습니다."
+            ),
+            execution_allowed=False,
+            warnings=intent_warnings
+        )
+    
+    # 2단계: Vertex AI 인증 설정
+    if config.vertex_credentials:
+        _setup_vertex_auth(config)
+    
+    # 3단계: LLM을 통한 SQL 생성
+    prompt = _build_natural_language_to_sql_prompt(request)
+    
+    completion_kwargs = {
+        "model": config.model,
+        "messages": [
+            {
+                "role": "system",
+                "content": "당신은 자연어를 안전한 MySQL SELECT 쿼리로 변환하는 전문가입니다. "
+                          "보안을 최우선으로 하며, 반드시 유효한 JSON만 반환하세요. "
+                          "데이터 수정 쿼리(INSERT, UPDATE, DELETE, DROP 등)는 절대 생성하지 마세요."
+            },
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.2,  # 일관성 있는 결과를 위해 낮은 온도
+        "max_tokens": config.max_tokens,
+    }
+    
+    if config.model.startswith("vertex_ai/"):
+        completion_kwargs["vertex_project"] = config.vertex_project
+        completion_kwargs["vertex_location"] = config.vertex_location
+    
+    if config.api_key:
+        completion_kwargs["api_key"] = config.api_key
+    
+    try:
+        response = await litellm.acompletion(**completion_kwargs)
+        content = response.choices[0].message.content.strip()
+        
+        # JSON 추출
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        
+        llm_result = json.loads(content)
+        
+        # LLM이 쿼리 생성을 거부한 경우
+        if not llm_result.get("sql_query"):
+            return GeneratedSqlResult(
+                original_question=request.question,
+                sql_query="",
+                explanation=llm_result.get("explanation", "쿼리를 생성할 수 없습니다."),
+                tables_used=llm_result.get("tables_used", []),
+                security_check=SqlSecurityCheckResult(
+                    is_safe=False,
+                    risk_level=SecurityRiskLevel.MEDIUM.value,
+                    violations=[],
+                    blocked_reason=llm_result.get("explanation", "쿼리를 생성할 수 없습니다.")
+                ),
+                execution_allowed=False,
+                warnings=llm_result.get("warnings", [])
+            )
+        
+        sql_query = llm_result.get("sql_query", "")
+        
+        # 4단계: 생성된 SQL 보안 검사
+        security_result = check_sql_security(sql_query, request.question)
+        
+        # 5단계: 보안 검사 통과 시 SQL 정제
+        if security_result.is_safe:
+            sql_query = sanitize_sql_query(sql_query, request.max_rows)
+            security_result.sanitized_query = sql_query
+        
+        all_warnings = intent_warnings + llm_result.get("warnings", [])
+        
+        return GeneratedSqlResult(
+            original_question=request.question,
+            sql_query=sql_query if security_result.is_safe else "",
+            explanation=llm_result.get("explanation", ""),
+            tables_used=llm_result.get("tables_used", []),
+            estimated_rows=llm_result.get("estimated_rows"),
+            security_check=security_result,
+            execution_allowed=security_result.is_safe,
+            warnings=all_warnings
+        )
+        
+    except json.JSONDecodeError as e:
+        return GeneratedSqlResult(
+            original_question=request.question,
+            sql_query="",
+            explanation=f"LLM 응답 파싱 실패: {str(e)}",
+            tables_used=[],
+            security_check=SqlSecurityCheckResult(
+                is_safe=False,
+                risk_level=SecurityRiskLevel.MEDIUM.value,
+                violations=[],
+                blocked_reason="LLM 응답 파싱 실패"
+            ),
+            execution_allowed=False,
+            warnings=[f"JSON 파싱 오류: {str(e)}"]
+        )
+    except Exception as e:
+        raise RuntimeError(f"LLM 호출 실패: {e}")

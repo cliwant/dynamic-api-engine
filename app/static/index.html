@@ -403,17 +403,68 @@
                 <!-- AI Features Tab -->
                 <div class="tab-panel" id="tab-ai-features">
                     <div class="form-panel" style="max-width: 1200px;">
-                        <div class="alert info">🧠 <strong>AI 기능:</strong> SQL 최적화 제안 | 테스트 케이스 자동 생성 | 자연어 API 호출</div>
+                        <div class="alert info">🧠 <strong>AI 기능:</strong> 자연어 쿼리 | SQL 최적화 | 테스트 케이스 | 자연어 API</div>
                         
                         <!-- Sub-tabs for AI features -->
-                        <div style="display: flex; gap: 8px; margin-bottom: 20px;">
-                            <button class="sidebar-btn" style="background: var(--accent-purple); color: white;" onclick="showAiSubTab('chat')" id="aiSubTab-chat">💬 자연어 API</button>
+                        <div style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
+                            <button class="sidebar-btn" style="background: var(--accent-purple); color: white;" onclick="showAiSubTab('query')" id="aiSubTab-query">📊 자연어 쿼리</button>
+                            <button class="sidebar-btn" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);" onclick="showAiSubTab('chat')" id="aiSubTab-chat">💬 자연어 API</button>
                             <button class="sidebar-btn" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);" onclick="showAiSubTab('optimize')" id="aiSubTab-optimize">🔧 SQL 최적화</button>
                             <button class="sidebar-btn" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);" onclick="showAiSubTab('testcase')" id="aiSubTab-testcase">🧪 테스트 생성</button>
                         </div>
                         
+                        <!-- Natural Language Query Sub-panel -->
+                        <div id="aiPanel-query" class="ai-sub-panel">
+                            <div class="metadata-card" style="margin-bottom: 20px;">
+                                <div class="metadata-card-header">
+                                    <span>📊</span>
+                                    <h3>자연어 → SQL 쿼리</h3>
+                                </div>
+                                <div class="metadata-card-body" style="max-height: none;">
+                                    <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px;">
+                                        자연어로 데이터를 요청하면 AI가 안전한 SQL 쿼리를 생성하고 실행합니다.<br>
+                                        <span style="color: var(--accent-green);">✓ 읽기 전용 (SELECT만 허용)</span> | 
+                                        <span style="color: var(--accent-orange);">⚠️ 민감 정보 자동 필터링</span> | 
+                                        <span style="color: var(--accent-red);">🛡️ SQL Injection 차단</span>
+                                    </p>
+                                    
+                                    <div class="form-group" style="margin-bottom: 14px;">
+                                        <label class="form-label">질문 <span class="required">*</span></label>
+                                        <textarea class="form-textarea" id="queryQuestion" placeholder="예: 회사 목록 보여줘, 최근 가입한 사용자 10명, 서울에 있는 회사들" style="min-height: 80px;"></textarea>
+                                    </div>
+                                    
+                                    <div class="form-group" style="margin-bottom: 14px;">
+                                        <label class="form-label">테이블 선택 <span style="font-weight: normal; color: var(--text-secondary);">(선택 안 하면 자동 선택)</span></label>
+                                        <div class="table-selector" id="queryTableSelector" style="max-height: 150px;"></div>
+                                    </div>
+                                    
+                                    <div class="form-row" style="margin-bottom: 14px;">
+                                        <div class="form-group">
+                                            <label class="form-label">최대 결과 수</label>
+                                            <input type="number" class="form-input" id="queryMaxRows" value="50" min="1" max="500">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">자동 실행</label>
+                                            <select class="form-select" id="queryAutoExecute">
+                                                <option value="false">쿼리 생성만</option>
+                                                <option value="true" selected>보안 검사 통과 시 자동 실행</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">LLM 모델</label>
+                                            <select class="form-select" id="queryLlmModel"></select>
+                                        </div>
+                                    </div>
+                                    
+                                    <button class="submit-btn" onclick="generateAndExecuteQuery()">📊 쿼리 생성 및 실행</button>
+                                </div>
+                            </div>
+                            
+                            <div id="queryResult"></div>
+                        </div>
+                        
                         <!-- Chat Sub-panel -->
-                        <div id="aiPanel-chat" class="ai-sub-panel">
+                        <div id="aiPanel-chat" class="ai-sub-panel" style="display: none;">
                             <div class="metadata-card" style="margin-bottom: 20px;">
                                 <div class="metadata-card-header">
                                     <span>💬</span>
@@ -1236,6 +1287,8 @@
         // ==================== AI Features ====================
         let optimizeSelectedTables = new Set();
         
+        let querySelectedTables = new Set();
+        
         function showAiSubTab(tab) {
             // Update sub-tab buttons
             document.querySelectorAll('[id^="aiSubTab-"]').forEach(btn => {
@@ -1251,9 +1304,253 @@
             document.getElementById(`aiPanel-${tab}`).style.display = 'block';
             
             // Initialize specific panels
+            if (tab === 'query') initQueryPanel();
             if (tab === 'optimize') initOptimizePanel();
             if (tab === 'testcase') initTestcasePanel();
             if (tab === 'chat') initChatPanel();
+        }
+        
+        function initQueryPanel() {
+            const select = document.getElementById('queryLlmModel');
+            if (!select.innerHTML) populateLlmModelSelect(select);
+            
+            const container = document.getElementById('queryTableSelector');
+            if (tables.length === 0) {
+                container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+                loadTables().then(() => renderQueryTables());
+            } else {
+                renderQueryTables();
+            }
+        }
+        
+        function renderQueryTables() {
+            const container = document.getElementById('queryTableSelector');
+            container.innerHTML = tables.map(t => 
+                `<div class="table-item" onclick="toggleQueryTable('${t.table_name}')" id="query-table-${t.table_name}">
+                    <div class="table-item-name">${t.table_name}</div>
+                </div>`
+            ).join('');
+        }
+        
+        function toggleQueryTable(name) {
+            const el = document.getElementById(`query-table-${name}`);
+            if (querySelectedTables.has(name)) {
+                querySelectedTables.delete(name);
+                el.classList.remove('selected');
+            } else {
+                querySelectedTables.add(name);
+                el.classList.add('selected');
+            }
+        }
+        
+        async function generateAndExecuteQuery() {
+            const question = document.getElementById('queryQuestion').value.trim();
+            if (!question) {
+                alert('질문을 입력해주세요.');
+                return;
+            }
+            
+            const resultDiv = document.getElementById('queryResult');
+            resultDiv.innerHTML = '<div class="loading"><div class="spinner"></div> AI가 쿼리를 생성하고 보안 검사 중...</div>';
+            
+            try {
+                const res = await fetch('/schema/ai/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        question,
+                        table_names: Array.from(querySelectedTables),
+                        max_rows: parseInt(document.getElementById('queryMaxRows').value) || 50,
+                        allow_joins: true,
+                        auto_execute: document.getElementById('queryAutoExecute').value === 'true',
+                        model: document.getElementById('queryLlmModel').value || 'vertex_ai/gemini-2.5-flash',
+                    })
+                });
+                
+                const data = await res.json();
+                
+                if (!res.ok) {
+                    resultDiv.innerHTML = `<div class="alert error">❌ ${data.detail?.message || '오류가 발생했습니다.'}</div>`;
+                    return;
+                }
+                
+                const result = data.data;
+                renderQueryResult(result);
+                
+            } catch (e) {
+                resultDiv.innerHTML = `<div class="alert error">❌ 요청 실패: ${e.message}</div>`;
+            }
+        }
+        
+        function renderQueryResult(result) {
+            const resultDiv = document.getElementById('queryResult');
+            const securityCheck = result.security_check || {};
+            const isBlocked = !result.execution_allowed;
+            
+            let securityBadge = '';
+            if (isBlocked) {
+                securityBadge = `<span style="background: var(--accent-red); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">🛡️ 차단됨 - ${securityCheck.risk_level}</span>`;
+            } else {
+                securityBadge = `<span style="background: var(--accent-green); color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px;">✓ 안전</span>`;
+            }
+            
+            let violationsHtml = '';
+            if (securityCheck.violations && securityCheck.violations.length > 0) {
+                violationsHtml = `
+                    <div style="margin-top: 12px;">
+                        <div style="font-size: 12px; font-weight: bold; color: var(--accent-red); margin-bottom: 6px;">⚠️ 보안 위반 사항:</div>
+                        ${securityCheck.violations.map(v => `
+                            <div style="background: rgba(255,107,107,0.1); padding: 8px; border-radius: 4px; margin-bottom: 4px; font-size: 11px;">
+                                <strong>${v.type}</strong> (${v.risk_level}): ${v.description}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            
+            let warningsHtml = '';
+            if (result.warnings && result.warnings.length > 0) {
+                warningsHtml = `
+                    <div style="margin-top: 12px;">
+                        <div style="font-size: 12px; font-weight: bold; color: var(--accent-orange); margin-bottom: 6px;">⚠️ 주의사항:</div>
+                        ${result.warnings.map(w => `<div style="font-size: 11px; color: var(--text-secondary);">• ${w}</div>`).join('')}
+                    </div>
+                `;
+            }
+            
+            let executionResultHtml = '';
+            if (result.execution_result) {
+                if (result.execution_result.success) {
+                    const data = result.execution_result.data || [];
+                    const columns = result.execution_result.columns || [];
+                    
+                    let tableHtml = '';
+                    if (data.length > 0) {
+                        tableHtml = `
+                            <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 8px;">
+                                <thead>
+                                    <tr style="background: var(--bg-tertiary);">
+                                        ${columns.map(col => `<th style="padding: 6px 8px; border: 1px solid var(--border-color); text-align: left;">${col}</th>`).join('')}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${data.slice(0, 50).map(row => `
+                                        <tr>
+                                            ${columns.map(col => `<td style="padding: 4px 8px; border: 1px solid var(--border-color);">${row[col] ?? ''}</td>`).join('')}
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                            ${data.length > 50 ? `<div style="font-size: 11px; color: var(--text-secondary); margin-top: 8px;">... 외 ${data.length - 50}건 더 있음</div>` : ''}
+                        `;
+                    } else {
+                        tableHtml = '<div style="color: var(--text-secondary); font-size: 12px;">결과가 없습니다.</div>';
+                    }
+                    
+                    executionResultHtml = `
+                        <div class="metadata-card" style="margin-top: 16px;">
+                            <div class="metadata-card-header" style="background: var(--accent-green);">
+                                <span>✅</span>
+                                <h3>실행 결과 (${result.execution_result.row_count}건)</h3>
+                            </div>
+                            <div class="metadata-card-body" style="max-height: 400px; overflow: auto;">
+                                ${tableHtml}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    executionResultHtml = `
+                        <div class="metadata-card" style="margin-top: 16px;">
+                            <div class="metadata-card-header" style="background: var(--accent-red);">
+                                <span>❌</span>
+                                <h3>실행 실패</h3>
+                            </div>
+                            <div class="metadata-card-body">
+                                <div style="color: var(--accent-red);">${result.execution_result.error}</div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+            
+            resultDiv.innerHTML = `
+                <div class="metadata-card">
+                    <div class="metadata-card-header">
+                        <span>📊</span>
+                        <h3>쿼리 생성 결과</h3>
+                        ${securityBadge}
+                    </div>
+                    <div class="metadata-card-body" style="max-height: none;">
+                        <div style="margin-bottom: 12px;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">질문</div>
+                            <div style="font-size: 13px;">${result.question}</div>
+                        </div>
+                        
+                        <div style="margin-bottom: 12px;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">설명</div>
+                            <div style="font-size: 13px;">${result.explanation}</div>
+                        </div>
+                        
+                        ${result.sql_query ? `
+                            <div style="margin-bottom: 12px;">
+                                <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">
+                                    생성된 SQL 쿼리
+                                    <button onclick="navigator.clipboard.writeText(\`${result.sql_query.replace(/`/g, '\\`')}\`); this.textContent='✓ 복사됨';" style="margin-left: 8px; font-size: 10px; padding: 2px 6px; cursor: pointer;">📋 복사</button>
+                                </div>
+                                <pre style="background: var(--bg-tertiary); padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 12px; margin: 0;">${result.sql_query}</pre>
+                            </div>
+                        ` : `
+                            <div class="alert error" style="margin-bottom: 12px;">
+                                쿼리가 생성되지 않았습니다: ${securityCheck.blocked_reason || '알 수 없는 이유'}
+                            </div>
+                        `}
+                        
+                        ${result.tables_used && result.tables_used.length > 0 ? `
+                            <div style="margin-bottom: 12px;">
+                                <div style="font-size: 11px; color: var(--text-secondary);">사용된 테이블</div>
+                                <div style="font-size: 12px;">${result.tables_used.join(', ')}</div>
+                            </div>
+                        ` : ''}
+                        
+                        ${violationsHtml}
+                        ${warningsHtml}
+                        
+                        ${!isBlocked && result.sql_query && !result.execution_result ? `
+                            <button class="submit-btn" style="margin-top: 12px;" onclick="executeGeneratedQuery(\`${result.sql_query.replace(/`/g, '\\`')}\`)">▶ 쿼리 실행하기</button>
+                        ` : ''}
+                    </div>
+                </div>
+                
+                ${executionResultHtml}
+            `;
+        }
+        
+        async function executeGeneratedQuery(sql) {
+            const resultDiv = document.getElementById('queryResult');
+            const existingContent = resultDiv.innerHTML;
+            resultDiv.innerHTML += '<div class="loading" style="margin-top: 12px;"><div class="spinner"></div> 쿼리 실행 중...</div>';
+            
+            try {
+                // 쿼리만 실행하는 API 호출
+                const res = await fetch('/schema/ai/query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        question: document.getElementById('queryQuestion').value.trim(),
+                        table_names: Array.from(querySelectedTables),
+                        max_rows: parseInt(document.getElementById('queryMaxRows').value) || 50,
+                        auto_execute: true,
+                        model: document.getElementById('queryLlmModel').value || 'vertex_ai/gemini-2.5-flash',
+                    })
+                });
+                
+                const data = await res.json();
+                if (data.data) {
+                    renderQueryResult(data.data);
+                }
+            } catch (e) {
+                resultDiv.innerHTML = existingContent + `<div class="alert error" style="margin-top: 12px;">❌ 실행 실패: ${e.message}</div>`;
+            }
         }
         
         function initChatPanel() {
@@ -1659,7 +1956,7 @@
         function initAiFeatures() {
             if (tables.length === 0) loadTables();
             if (llmModels.length === 0) loadLLMModels();
-            showAiSubTab('chat');
+            showAiSubTab('query');  // 자연어 쿼리 탭을 기본으로
         }
         
         document.getElementById('searchInput').addEventListener('input', e => renderApiList(e.target.value));

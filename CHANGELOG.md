@@ -2,6 +2,43 @@
 
 이 문서는 Prompt API Engine의 모든 주요 변경 사항을 기록합니다.
 
+## [1.9.0] - 2026-01-09 17:00
+
+### 📊 자연어 SQL 쿼리 생성 기능
+
+#### 핵심 기능
+- `POST /schema/ai/query` - 자연어를 SQL 쿼리로 변환하고 실행
+- LLM을 활용한 자연어 → MySQL SELECT 쿼리 자동 생성
+- 테이블 스키마 기반 정확한 쿼리 생성
+- 자동 실행 옵션 (보안 검사 통과 시)
+
+#### 🛡️ 강력한 보안 검증 시스템
+- **SQL Injection 차단**: 위험 패턴 실시간 감지
+  - `UNION SELECT`, `'; DROP`, `BENCHMARK()`, `SLEEP()` 등
+- **DDL 명령어 차단**: DROP, CREATE, ALTER, TRUNCATE, GRANT 등
+- **DML 제한**: INSERT, UPDATE, DELETE 완전 차단 (읽기 전용)
+- **민감 데이터 보호**: 
+  - 비밀번호, 토큰, API 키 관련 컬럼 접근 차단
+  - 주민번호, 카드번호, 계좌번호 등 개인정보 보호
+- **악의적 의도 감지**: 
+  - "삭제해줘", "해킹", "비밀번호 보여줘" 등 차단
+- **LIMIT 강제 적용**: 최대 결과 행 수 제한 (기본 100개)
+- **시스템 테이블 접근 차단**: information_schema, mysql, sys 등
+
+#### 보안 검사 API
+- `POST /schema/ai/security-check` - SQL 쿼리 보안 위험도 분석
+- 위험 수준 분류: SAFE, LOW, MEDIUM, HIGH, CRITICAL
+- 위반 사항 상세 보고
+
+#### UI 개선
+- 📊 자연어 쿼리 서브탭 추가
+- 테이블 다중 선택 기능
+- 보안 검사 결과 시각화 (안전/위험 배지)
+- 생성된 SQL 쿼리 복사 기능
+- 실행 결과 테이블 뷰
+
+---
+
 ## [1.8.0] - 2026-01-09 16:30
 
 ### 🧠 AI 기능 확장
