@@ -2,6 +2,73 @@
 
 이 문서는 Prompt API Engine의 모든 주요 변경 사항을 기록합니다.
 
+## [1.6.0] - 2026-01-09 15:30
+
+### 🛡️ 에러 핸들링 고도화 & 로깅 시스템 개선
+
+#### 에러 핸들링 고도화
+
+**커스텀 예외 클래스 추가** (`app/core/exceptions.py`)
+- `ApiEngineError` - 기본 예외 클래스
+- `ValidationError` - 유효성 검증 오류
+- `NotFoundError` - 리소스 미발견
+- `DuplicateError` - 중복 데이터
+- `AuthenticationError` - 인증 오류
+- `AuthorizationError` - 권한 오류
+- `ExecutionError` - 로직 실행 오류
+- `SecurityError` - 보안 위반
+- `DatabaseError` - DB 오류
+- `ExternalServiceError` - 외부 서비스 오류
+- `RateLimitError` - 요청 제한
+- `ImmutablePolicyError` - 불변 정책 위반
+
+**사용자 친화적 에러 응답**
+- 에러 코드별 한글 메시지 매핑
+- 구조화된 에러 응답 형식
+- 디버그 모드에서 상세 정보 제공
+
+**예외 핸들러 개선**
+- `RequestValidationError` 핸들러 추가
+- `PydanticValidationError` 핸들러 추가
+- `SQLAlchemyError` 핸들러 추가
+- 전역 catch-all 핸들러 개선
+
+#### 로깅 시스템 개선 (`app/core/logging.py`)
+
+**JSON 구조화 로깅**
+- `JSONFormatter` - JSON 형식 로그 출력
+- 타임스탬프, 레벨, 로거명, 메시지 포함
+- 요청 ID, HTTP 메서드, 경로, 상태 코드, 응답 시간 추적
+
+**요청/응답 로깅 미들웨어**
+- `RequestLoggingMiddleware` - 모든 요청/응답 자동 로깅
+- 요청 ID 자동 생성 및 헤더 추가 (`X-Request-ID`)
+- 응답 시간 측정 및 헤더 추가 (`X-Response-Time`)
+- 클라이언트 IP, User-Agent 추적
+
+**API 호출 로거**
+- `APICallLogger` - API 실행 로깅 유틸리티
+- SQL 실행 로깅
+- 성능 메트릭 수집
+
+**로그 예시**
+```json
+{
+  "timestamp": "2026-01-09T06:24:07.012887Z",
+  "level": "INFO",
+  "logger": "api_engine.request",
+  "message": "← 200 (532.36ms)",
+  "request_id": "b1d4a681",
+  "method": "GET",
+  "path": "/admin/routes",
+  "status_code": 200,
+  "duration_ms": 532.36,
+  "client_ip": "127.0.0.1"
+}
+```
+
+---
+
 ## [1.5.0] - 2026-01-02 20:00
 
 ### 🧪 테스트 필수화 & LLM UI 고도화 & Response 뷰 개선
