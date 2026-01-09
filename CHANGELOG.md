@@ -2,6 +2,81 @@
 
 이 문서는 Prompt API Engine의 모든 주요 변경 사항을 기록합니다.
 
+## [1.8.0] - 2026-01-09 16:30
+
+### 🧠 AI 기능 확장
+
+#### SQL 최적화 제안
+- `POST /schema/ai/optimize-sql` - LLM 기반 SQL 쿼리 최적화 분석
+- 인덱스 활용 최적화 제안
+- 쿼리 재작성 추천
+- JOIN 순서 최적화
+- 새 인덱스 생성 권장
+- 예상 성능 향상 분석
+
+#### 자동 테스트 케이스 생성
+- `POST /schema/ai/generate-test-cases` - API 테스트 케이스 자동 생성
+- 정상 케이스 (Positive): 3개 이상
+- 에러 케이스 (Negative): 필수 파라미터 누락, 잘못된 타입 등
+- 경계값 테스트 (Boundary): 빈 문자열, 최대/최소값, 특수문자 등
+- 성능 테스트 (Performance): 대량 데이터 조회 등
+- 테스트 케이스 JSON 내보내기
+
+#### 자연어 API 호출
+- `POST /schema/ai/chat` - 자연어로 API 검색 및 실행
+- 사용자 질문에서 적합한 API 자동 선택
+- 파라미터 자동 추출 (예: "홍길동 사용자" → `{"user_name": "홍길동"}`)
+- 신뢰도 점수 표시
+- 대안 API 제안
+- 자동 실행 옵션 (신뢰도 70% 이상)
+
+#### UI 개선
+- 🧠 AI 기능 탭 추가 (3개 서브탭)
+  - 💬 자연어 API: 자연어로 API 호출
+  - 🔧 SQL 최적화: 쿼리 성능 분석
+  - 🧪 테스트 생성: API 테스트 케이스 생성
+- 각 기능별 결과 시각화
+- 최적화 쿼리 복사 기능
+- 테스트 케이스 바로 실행 기능
+
+---
+
+## [1.7.0] - 2026-01-09 15:40
+
+### 🚀 고도화 기능 추가
+
+#### API 그룹/카테고리
+- `CATEGORY` 컬럼 추가 (APP_API_ROUTE_L)
+- `/admin/categories` - 카테고리 목록 조회 API
+- `/admin/categories/{name}/apis` - 카테고리별 API 목록 API
+- 태그 기반 자동 카테고리 분류
+
+#### API 문서 자동 생성 (OpenAPI)
+- `/admin/openapi-spec` - 동적 OpenAPI 3.0 스펙 자동 생성
+- `/admin/routes/{id}/openapi` - 개별 API OpenAPI 스펙
+- Swagger UI 호환 형식 출력
+- 파라미터, 응답 스펙 자동 매핑
+
+#### 사용량 분석 대시보드
+- `/admin/stats/overview` - API 통계 개요 (총 개수, 활성/비활성, 메서드별, 로직타입별)
+- `/admin/stats/audit-summary` - 감사 로그 요약 (일별 활동, 액션별 집계)
+- UI 대시보드 탭 추가 (📊 대시보드)
+- 최근 7일 활동 시각화
+
+#### API Import/Export
+- `/admin/export` - 전체 API JSON 내보내기
+- `/admin/export/{id}` - 개별 API 내보내기
+- `/admin/import` - API JSON 가져오기
+- 백업/복원 기능
+- 환경 간 API 이동 지원
+
+#### UI 개선
+- 사이드바에 대시보드, Export 버튼 추가
+- 대시보드 탭 (API 개요, 메서드별, 로직타입별, 최근 활동)
+- Export 버튼으로 즉시 JSON 다운로드
+
+---
+
 ## [1.6.0] - 2026-01-09 15:30
 
 ### 🛡️ 에러 핸들링 고도화 & 로깅 시스템 개선

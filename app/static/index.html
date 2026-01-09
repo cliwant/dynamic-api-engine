@@ -262,6 +262,10 @@
                     <button class="sidebar-btn add" onclick="openAddModal()">➕ 추가</button>
                     <button class="sidebar-btn llm" onclick="switchTab('llm')">🤖 LLM</button>
                 </div>
+                <div class="sidebar-buttons" style="margin-top: 6px;">
+                    <button class="sidebar-btn" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);" onclick="switchTab('dashboard')">📊 대시보드</button>
+                    <button class="sidebar-btn" style="background: var(--accent-orange); color: white;" onclick="exportApis()">📥 Export</button>
+                </div>
             </div>
             <div class="api-list" id="apiList"></div>
         </div>
@@ -281,6 +285,8 @@
                 <div class="tab" data-tab="metadata" onclick="switchTab('metadata')">📋 Metadata</div>
                 <div class="tab" data-tab="add-version" onclick="switchTab('add-version')">➕ 버전추가</div>
                 <div class="tab" data-tab="llm" onclick="switchTab('llm')">🤖 LLM 생성</div>
+                <div class="tab" data-tab="ai-features" onclick="switchTab('ai-features')">🧠 AI 기능</div>
+                <div class="tab" data-tab="dashboard" onclick="switchTab('dashboard')">📊 대시보드</div>
             </div>
             
             <div class="main-content">
@@ -393,6 +399,181 @@
                         <div id="llmResult"></div>
                     </div>
                 </div>
+                
+                <!-- AI Features Tab -->
+                <div class="tab-panel" id="tab-ai-features">
+                    <div class="form-panel" style="max-width: 1200px;">
+                        <div class="alert info">🧠 <strong>AI 기능:</strong> SQL 최적화 제안 | 테스트 케이스 자동 생성 | 자연어 API 호출</div>
+                        
+                        <!-- Sub-tabs for AI features -->
+                        <div style="display: flex; gap: 8px; margin-bottom: 20px;">
+                            <button class="sidebar-btn" style="background: var(--accent-purple); color: white;" onclick="showAiSubTab('chat')" id="aiSubTab-chat">💬 자연어 API</button>
+                            <button class="sidebar-btn" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);" onclick="showAiSubTab('optimize')" id="aiSubTab-optimize">🔧 SQL 최적화</button>
+                            <button class="sidebar-btn" style="background: var(--bg-tertiary); border: 1px solid var(--border-color);" onclick="showAiSubTab('testcase')" id="aiSubTab-testcase">🧪 테스트 생성</button>
+                        </div>
+                        
+                        <!-- Chat Sub-panel -->
+                        <div id="aiPanel-chat" class="ai-sub-panel">
+                            <div class="metadata-card" style="margin-bottom: 20px;">
+                                <div class="metadata-card-header">
+                                    <span>💬</span>
+                                    <h3>자연어 API 호출</h3>
+                                </div>
+                                <div class="metadata-card-body" style="max-height: none;">
+                                    <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px;">
+                                        자연어로 질문하면 AI가 적합한 API를 찾아 실행합니다.<br>
+                                        예: "최근 가입한 사용자 10명 보여줘", "진행 중인 프로젝트 목록"
+                                    </p>
+                                    
+                                    <div class="form-group" style="margin-bottom: 14px;">
+                                        <label class="form-label">질문 <span class="required">*</span></label>
+                                        <textarea class="form-textarea" id="chatQuestion" placeholder="예: 홍길동 회사 정보 조회해줘" style="min-height: 80px;"></textarea>
+                                    </div>
+                                    
+                                    <div class="form-row" style="margin-bottom: 14px;">
+                                        <div class="form-group">
+                                            <label class="form-label">자동 실행</label>
+                                            <select class="form-select" id="chatAutoExecute">
+                                                <option value="false">분석만 (API 선택 + 파라미터 추출)</option>
+                                                <option value="true">자동 실행 (신뢰도 70% 이상)</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">LLM 모델</label>
+                                            <select class="form-select" id="chatLlmModel"></select>
+                                        </div>
+                                    </div>
+                                    
+                                    <button class="submit-btn" onclick="sendChatQuery()">💬 AI에게 질문하기</button>
+                                </div>
+                            </div>
+                            
+                            <div id="chatResult"></div>
+                        </div>
+                        
+                        <!-- SQL Optimize Sub-panel -->
+                        <div id="aiPanel-optimize" class="ai-sub-panel" style="display: none;">
+                            <div class="metadata-card" style="margin-bottom: 20px;">
+                                <div class="metadata-card-header">
+                                    <span>🔧</span>
+                                    <h3>SQL 최적화 제안</h3>
+                                </div>
+                                <div class="metadata-card-body" style="max-height: none;">
+                                    <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px;">
+                                        SQL 쿼리를 분석하여 인덱스 활용, 쿼리 재작성, 성능 개선 방안을 제안합니다.
+                                    </p>
+                                    
+                                    <div class="form-group" style="margin-bottom: 14px;">
+                                        <label class="form-label">SQL 쿼리 <span class="required">*</span></label>
+                                        <textarea class="form-textarea" id="optimizeSql" placeholder="SELECT * FROM APP_USER_L WHERE ..." style="min-height: 100px;"></textarea>
+                                    </div>
+                                    
+                                    <div class="form-group" style="margin-bottom: 14px;">
+                                        <label class="form-label">관련 테이블 선택</label>
+                                        <div class="table-selector" id="optimizeTableSelector" style="max-height: 150px;"></div>
+                                    </div>
+                                    
+                                    <div class="form-row" style="margin-bottom: 14px;">
+                                        <div class="form-group">
+                                            <label class="form-label">현재 실행 시간 (ms)</label>
+                                            <input type="number" class="form-input" id="optimizeExecTime" placeholder="선택사항">
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">LLM 모델</label>
+                                            <select class="form-select" id="optimizeLlmModel"></select>
+                                        </div>
+                                    </div>
+                                    
+                                    <button class="submit-btn" onclick="optimizeSqlQuery()">🔧 SQL 최적화 분석</button>
+                                </div>
+                            </div>
+                            
+                            <div id="optimizeResult"></div>
+                        </div>
+                        
+                        <!-- Test Case Sub-panel -->
+                        <div id="aiPanel-testcase" class="ai-sub-panel" style="display: none;">
+                            <div class="metadata-card" style="margin-bottom: 20px;">
+                                <div class="metadata-card-header">
+                                    <span>🧪</span>
+                                    <h3>테스트 케이스 자동 생성</h3>
+                                </div>
+                                <div class="metadata-card-body" style="max-height: none;">
+                                    <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px;">
+                                        API 정의를 분석하여 정상/에러/경계값/성능 테스트 케이스를 자동 생성합니다.
+                                    </p>
+                                    
+                                    <div class="form-group" style="margin-bottom: 14px;">
+                                        <label class="form-label">API 선택 <span class="required">*</span></label>
+                                        <select class="form-select" id="testcaseApiSelect">
+                                            <option value="">API를 선택하세요</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <div id="testcaseApiInfo" style="display: none; margin-bottom: 14px; padding: 12px; background: var(--bg-tertiary); border-radius: 6px;">
+                                        <div class="info-row"><span class="info-label">경로</span><span class="info-value" id="testcaseApiPath"></span></div>
+                                        <div class="info-row"><span class="info-label">로직</span><span class="info-value" id="testcaseApiLogic" style="font-size: 10px;"></span></div>
+                                    </div>
+                                    
+                                    <div class="form-group" style="margin-bottom: 14px;">
+                                        <label class="form-label">LLM 모델</label>
+                                        <select class="form-select" id="testcaseLlmModel"></select>
+                                    </div>
+                                    
+                                    <button class="submit-btn" onclick="generateTestCases()">🧪 테스트 케이스 생성</button>
+                                </div>
+                            </div>
+                            
+                            <div id="testcaseResult"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Dashboard Tab -->
+                <div class="tab-panel" id="tab-dashboard">
+                    <div class="form-panel" style="max-width: 1200px;">
+                        <div class="alert info">📊 <strong>대시보드:</strong> API 통계 및 사용량 분석</div>
+                        
+                        <div class="metadata-panel" style="padding: 0;">
+                            <!-- Overview Card -->
+                            <div class="metadata-card">
+                                <div class="metadata-card-header"><h3>📈 API 개요</h3></div>
+                                <div class="metadata-card-body" id="dashboardOverview">
+                                    <div class="loading"><div class="spinner"></div></div>
+                                </div>
+                            </div>
+                            
+                            <!-- Method Distribution Card -->
+                            <div class="metadata-card">
+                                <div class="metadata-card-header"><h3>🔧 HTTP 메서드별</h3></div>
+                                <div class="metadata-card-body" id="dashboardMethods">
+                                    <div class="loading"><div class="spinner"></div></div>
+                                </div>
+                            </div>
+                            
+                            <!-- Logic Types Card -->
+                            <div class="metadata-card">
+                                <div class="metadata-card-header"><h3>⚡ 로직 타입별</h3></div>
+                                <div class="metadata-card-body" id="dashboardLogicTypes">
+                                    <div class="loading"><div class="spinner"></div></div>
+                                </div>
+                            </div>
+                            
+                            <!-- Recent Activity Card -->
+                            <div class="metadata-card" style="grid-column: span 2;">
+                                <div class="metadata-card-header"><h3>📜 최근 활동</h3></div>
+                                <div class="metadata-card-body" id="dashboardActivity" style="max-height: 400px;">
+                                    <div class="loading"><div class="spinner"></div></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top: 20px; display: flex; gap: 10px;">
+                            <button class="submit-btn" style="flex: 1;" onclick="loadDashboard()">🔄 새로고침</button>
+                            <button class="submit-btn" style="flex: 1; background: linear-gradient(135deg, var(--accent-orange), var(--accent-pink));" onclick="exportApis()">📥 전체 API 내보내기</button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -488,6 +669,8 @@
             document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
             document.getElementById(`tab-${tab}`)?.classList.add('active');
             if (tab === 'llm' && tables.length === 0) { loadTables(); loadLLMModels(); }
+            if (tab === 'dashboard') { loadDashboard(); }
+            if (tab === 'ai-features') { initAiFeatures(); }
         }
         
         function openAddModal() { document.getElementById('addModal').classList.add('active'); newApiTestPassed = false; updateCreateBtn(); }
@@ -662,12 +845,23 @@
                 byProvider[m.provider].push(m);
             });
             let html = '';
-            for (const [prov, models] of Object.entries(byProvider)) {
+            // Vertex AI를 먼저 표시
+            const providerOrder = ['vertex_ai', 'google', 'openai', 'anthropic', 'mistral', 'groq', 'together_ai', 'azure', 'bedrock', 'ollama', 'openrouter'];
+            const sortedProviders = [...new Set([...providerOrder, ...Object.keys(byProvider)])].filter(p => byProvider[p]);
+            
+            for (const prov of sortedProviders) {
+                const models = byProvider[prov];
+                if (!models) continue;
                 html += `<optgroup label="${prov.toUpperCase()}">`;
-                models.forEach(m => { html += `<option value="${m.id}" data-auth="${m.auth}">${m.name}</option>`; });
+                models.forEach(m => { 
+                    const isDefault = m.id === 'vertex_ai/gemini-2.5-flash';
+                    html += `<option value="${m.id}" data-auth="${m.auth}" ${isDefault ? 'selected' : ''}>${m.name}</option>`; 
+                });
                 html += '</optgroup>';
             }
             select.innerHTML = html;
+            // Gemini 2.0 Flash를 기본 선택
+            select.value = 'vertex_ai/gemini-2.5-flash';
             updateAuthFields();
         }
         
@@ -678,6 +872,18 @@
             const method = authMethods[authType];
             
             const container = document.getElementById('authFields');
+            
+            // Vertex AI의 경우 gcloud-key.json 자동 사용 안내
+            if (authType === 'vertex') {
+                container.innerHTML = `
+                    <div class="alert success" style="margin:0;">
+                        ✅ <strong>gcloud-key.json 자동 인증</strong><br>
+                        <span style="font-size:11px;">프로젝트에 있는 gcloud-key.json 파일이 자동으로 사용됩니다.<br>
+                        추가 입력 없이 바로 사용 가능합니다.</span>
+                    </div>`;
+                return;
+            }
+            
             if (!method) { container.innerHTML = ''; return; }
             
             let html = `<p style="font-size:11px;color:var(--text-secondary);margin-bottom:10px;">${method.description}</p><div class="form-row">`;
@@ -942,6 +1148,518 @@
                 else if (/null/.test(m)) cls = 'json-null';
                 return `<span class="${cls}">${m}</span>`;
             });
+        }
+        
+        // Dashboard Functions
+        async function loadDashboard() {
+            try {
+                // Load Overview Stats
+                const statsRes = await fetch('/admin/stats/overview');
+                const statsData = await statsRes.json();
+                const stats = statsData.data;
+                
+                document.getElementById('dashboardOverview').innerHTML = `
+                    <div class="info-grid">
+                        <div class="info-row"><span class="info-label">총 API 수</span><span class="info-value"><strong>${stats.total_apis}</strong></span></div>
+                        <div class="info-row"><span class="info-label">활성화</span><span class="info-value"><span class="badge green">${stats.active_apis}</span></span></div>
+                        <div class="info-row"><span class="info-label">비활성화</span><span class="info-value"><span class="badge red">${stats.inactive_apis}</span></span></div>
+                        <div class="info-row"><span class="info-label">총 버전 수</span><span class="info-value">${stats.total_versions}</span></div>
+                        <div class="info-row"><span class="info-label">최근 7일 생성</span><span class="info-value"><span class="badge blue">${stats.recent_apis_7d}</span></span></div>
+                    </div>`;
+                
+                // Methods
+                let methodsHtml = '<div class="info-grid">';
+                for (const [method, count] of Object.entries(stats.by_method || {})) {
+                    const color = method === 'GET' ? 'green' : method === 'POST' ? 'blue' : 'purple';
+                    methodsHtml += `<div class="info-row"><span class="info-label">${method}</span><span class="info-value"><span class="badge ${color}">${count}</span></span></div>`;
+                }
+                methodsHtml += '</div>';
+                document.getElementById('dashboardMethods').innerHTML = methodsHtml;
+                
+                // Logic Types
+                let logicHtml = '<div class="info-grid">';
+                for (const [type, count] of Object.entries(stats.by_logic_type || {})) {
+                    logicHtml += `<div class="info-row"><span class="info-label">${type}</span><span class="info-value">${count}</span></div>`;
+                }
+                logicHtml += '</div>';
+                document.getElementById('dashboardLogicTypes').innerHTML = logicHtml;
+                
+                // Load Audit Summary
+                const auditRes = await fetch('/admin/stats/audit-summary?days=7');
+                const auditData = await auditRes.json();
+                const audit = auditData.data;
+                
+                let activityHtml = '<div class="audit-list">';
+                for (const log of (audit.recent_activity || [])) {
+                    activityHtml += `<div class="audit-item ${log.action}">
+                        <div class="audit-header">
+                            <span class="audit-action">${log.action}</span>
+                            <span class="audit-time">${formatDate(log.created_at)}</span>
+                        </div>
+                        <div class="audit-details">Route: ${log.route_id || '-'} | Actor: ${log.actor || '-'}</div>
+                    </div>`;
+                }
+                activityHtml += '</div>';
+                document.getElementById('dashboardActivity').innerHTML = activityHtml || '<div class="empty-state">최근 활동 없음</div>';
+                
+            } catch (e) {
+                console.error('Dashboard load error:', e);
+                document.getElementById('dashboardOverview').innerHTML = '<div class="empty-state">로딩 실패</div>';
+            }
+        }
+        
+        async function exportApis() {
+            try {
+                const res = await fetch('/admin/export?include_inactive=true');
+                const data = await res.json();
+                
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `api-export-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                alert(`✅ ${data.total_apis}개 API가 내보내기되었습니다.`);
+            } catch (e) {
+                console.error('Export error:', e);
+                alert('❌ 내보내기 실패: ' + e.message);
+            }
+        }
+        
+        document.getElementById('searchInput').addEventListener('input', e => renderApiList(e.target.value));
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAddModal(); });
+        
+        // ==================== AI Features ====================
+        let optimizeSelectedTables = new Set();
+        
+        function showAiSubTab(tab) {
+            // Update sub-tab buttons
+            document.querySelectorAll('[id^="aiSubTab-"]').forEach(btn => {
+                btn.style.background = 'var(--bg-tertiary)';
+                btn.style.border = '1px solid var(--border-color)';
+            });
+            const activeBtn = document.getElementById(`aiSubTab-${tab}`);
+            activeBtn.style.background = 'var(--accent-purple)';
+            activeBtn.style.border = 'none';
+            
+            // Show selected panel
+            document.querySelectorAll('.ai-sub-panel').forEach(p => p.style.display = 'none');
+            document.getElementById(`aiPanel-${tab}`).style.display = 'block';
+            
+            // Initialize specific panels
+            if (tab === 'optimize') initOptimizePanel();
+            if (tab === 'testcase') initTestcasePanel();
+            if (tab === 'chat') initChatPanel();
+        }
+        
+        function initChatPanel() {
+            const select = document.getElementById('chatLlmModel');
+            if (select.innerHTML) return;
+            populateLlmModelSelect(select);
+        }
+        
+        function initOptimizePanel() {
+            const select = document.getElementById('optimizeLlmModel');
+            if (!select.innerHTML) populateLlmModelSelect(select);
+            
+            const container = document.getElementById('optimizeTableSelector');
+            if (tables.length === 0) {
+                container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+                loadTables().then(() => renderOptimizeTables());
+            } else {
+                renderOptimizeTables();
+            }
+        }
+        
+        function renderOptimizeTables() {
+            const container = document.getElementById('optimizeTableSelector');
+            container.innerHTML = tables.map(t => 
+                `<div class="table-item" onclick="toggleOptimizeTable('${t.table_name}')" id="optimize-table-${t.table_name}">
+                    <div class="table-item-name">${t.table_name}</div>
+                </div>`
+            ).join('');
+        }
+        
+        function toggleOptimizeTable(name) {
+            const el = document.getElementById(`optimize-table-${name}`);
+            if (optimizeSelectedTables.has(name)) {
+                optimizeSelectedTables.delete(name);
+                el.classList.remove('selected');
+            } else {
+                optimizeSelectedTables.add(name);
+                el.classList.add('selected');
+            }
+        }
+        
+        function initTestcasePanel() {
+            const select = document.getElementById('testcaseLlmModel');
+            if (!select.innerHTML) populateLlmModelSelect(select);
+            
+            const apiSelect = document.getElementById('testcaseApiSelect');
+            if (apiSelect.options.length <= 1) {
+                apis.forEach(api => {
+                    const opt = document.createElement('option');
+                    opt.value = api.id;
+                    opt.textContent = `${api.method} /api/${api.path} - ${api.name || ''}`;
+                    apiSelect.appendChild(opt);
+                });
+            }
+            
+            apiSelect.onchange = async () => {
+                const apiId = apiSelect.value;
+                const infoDiv = document.getElementById('testcaseApiInfo');
+                if (!apiId) {
+                    infoDiv.style.display = 'none';
+                    return;
+                }
+                
+                const api = apis.find(a => a.id === apiId);
+                if (!api) return;
+                
+                // Load version data
+                try {
+                    const res = await fetch(`/admin/routes/${apiId}/versions`);
+                    const versions = (await res.json()).data || [];
+                    const current = versions.find(v => v.is_current) || versions[0];
+                    
+                    document.getElementById('testcaseApiPath').textContent = `${api.method} /api/${api.path}`;
+                    document.getElementById('testcaseApiLogic').textContent = current?.logic_body?.substring(0, 200) || '-';
+                    infoDiv.style.display = 'block';
+                } catch (e) {
+                    console.error(e);
+                }
+            };
+        }
+        
+        function populateLlmModelSelect(select) {
+            if (!llmModels.length) {
+                loadLLMModels().then(() => doPopulate(select));
+            } else {
+                doPopulate(select);
+            }
+            
+            function doPopulate(sel) {
+                const byProvider = {};
+                llmModels.forEach(m => {
+                    if (!byProvider[m.provider]) byProvider[m.provider] = [];
+                    byProvider[m.provider].push(m);
+                });
+                
+                let html = '';
+                const providerOrder = ['vertex_ai', 'google', 'openai', 'anthropic'];
+                const sortedProviders = [...new Set([...providerOrder, ...Object.keys(byProvider)])].filter(p => byProvider[p]);
+                
+                for (const prov of sortedProviders) {
+                    const models = byProvider[prov];
+                    if (!models) continue;
+                    html += `<optgroup label="${prov.toUpperCase()}">`;
+                    models.forEach(m => {
+                        const isDefault = m.id === 'vertex_ai/gemini-2.5-flash';
+                        html += `<option value="${m.id}" ${isDefault ? 'selected' : ''}>${m.name}</option>`;
+                    });
+                    html += '</optgroup>';
+                }
+                sel.innerHTML = html;
+                sel.value = 'vertex_ai/gemini-2.5-flash';
+            }
+        }
+        
+        // Chat API
+        async function sendChatQuery() {
+            const question = document.getElementById('chatQuestion').value.trim();
+            if (!question) { alert('질문을 입력하세요'); return; }
+            
+            const resultDiv = document.getElementById('chatResult');
+            resultDiv.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            
+            try {
+                const res = await fetch('/schema/ai/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        question,
+                        auto_execute: document.getElementById('chatAutoExecute').value === 'true',
+                        model: document.getElementById('chatLlmModel').value
+                    })
+                });
+                
+                if (!res.ok) throw new Error((await res.json()).detail?.message || 'AI 호출 실패');
+                const result = await res.json();
+                const data = result.data;
+                
+                let html = `<div class="generated-result">
+                    <h4>💬 AI 분석 결과</h4>
+                    <div class="generated-field">
+                        <div class="generated-field-label">질문</div>
+                        <div class="generated-field-value">${escapeHtml(data.question)}</div>
+                    </div>`;
+                
+                if (data.interpretation?.selected_api) {
+                    const api = data.interpretation.selected_api;
+                    html += `
+                    <div class="generated-field">
+                        <div class="generated-field-label">선택된 API</div>
+                        <div class="generated-field-value">${api.method} /api/${api.path}</div>
+                    </div>
+                    <div class="generated-field">
+                        <div class="generated-field-label">추출된 파라미터</div>
+                        <div class="generated-field-value">${formatJson(data.interpretation.params)}</div>
+                    </div>
+                    <div class="generated-field">
+                        <div class="generated-field-label">신뢰도</div>
+                        <div class="generated-field-value">
+                            <span class="badge ${data.interpretation.confidence >= 0.7 ? 'green' : 'red'}">${Math.round(data.interpretation.confidence * 100)}%</span>
+                        </div>
+                    </div>
+                    <div class="generated-field">
+                        <div class="generated-field-label">해석</div>
+                        <div class="generated-field-value">${escapeHtml(data.interpretation.explanation)}</div>
+                    </div>`;
+                    
+                    if (data.execution_result) {
+                        html += `
+                        <div class="generated-field">
+                            <div class="generated-field-label">실행 결과</div>
+                            <div class="generated-field-value" style="max-height: 300px; overflow: auto;">
+                                ${data.execution_result.success 
+                                    ? `<span class="badge green">성공</span><pre style="margin-top:8px">${JSON.stringify(data.execution_result.data, null, 2)}</pre>`
+                                    : `<span class="badge red">실패</span><br>${escapeHtml(data.execution_result.error)}`}
+                            </div>
+                        </div>`;
+                    } else {
+                        html += `<button class="submit-btn" style="margin-top: 14px;" onclick="executeFromChat('${api.route_id}', ${JSON.stringify(data.interpretation.params).replace(/"/g, '&quot;')})">▶ 이 API 실행하기</button>`;
+                    }
+                    
+                    if (data.interpretation.alternatives?.length) {
+                        html += `
+                        <div class="generated-field">
+                            <div class="generated-field-label">대안 API</div>
+                            <div class="generated-field-value">${data.interpretation.alternatives.map(a => `• ${a.path}: ${a.reason}`).join('<br>')}</div>
+                        </div>`;
+                    }
+                } else {
+                    html += `<div class="alert warning" style="margin-top: 14px;">
+                        적합한 API를 찾을 수 없습니다.<br>
+                        ${escapeHtml(data.interpretation?.explanation || '')}
+                    </div>`;
+                }
+                
+                html += '</div>';
+                resultDiv.innerHTML = html;
+                
+            } catch (e) {
+                resultDiv.innerHTML = `<div class="alert warning">❌ ${e.message}</div>`;
+            }
+        }
+        
+        async function executeFromChat(routeId, params) {
+            const api = apis.find(a => a.id === routeId);
+            if (!api) { alert('API를 찾을 수 없습니다'); return; }
+            
+            // Select API and fill params
+            await selectApi(routeId);
+            switchTab('request');
+            
+            // Fill params
+            for (const [key, val] of Object.entries(params)) {
+                const input = document.getElementById(`param-${key}`);
+                if (input) input.value = val;
+            }
+            
+            // Send request
+            setTimeout(() => sendRequest(), 500);
+        }
+        
+        // SQL Optimization
+        async function optimizeSqlQuery() {
+            const sql = document.getElementById('optimizeSql').value.trim();
+            if (!sql) { alert('SQL 쿼리를 입력하세요'); return; }
+            if (optimizeSelectedTables.size === 0) { alert('관련 테이블을 선택하세요'); return; }
+            
+            const resultDiv = document.getElementById('optimizeResult');
+            resultDiv.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            
+            const execTime = document.getElementById('optimizeExecTime').value;
+            
+            try {
+                const res = await fetch('/schema/ai/optimize-sql', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sql_query: sql,
+                        table_names: Array.from(optimizeSelectedTables),
+                        execution_time_ms: execTime ? parseFloat(execTime) : null,
+                        model: document.getElementById('optimizeLlmModel').value
+                    })
+                });
+                
+                if (!res.ok) throw new Error((await res.json()).detail?.message || 'AI 호출 실패');
+                const result = await res.json();
+                const data = result.data;
+                
+                let html = `<div class="generated-result">
+                    <h4>🔧 SQL 최적화 결과</h4>
+                    
+                    <div class="generated-field">
+                        <div class="generated-field-label">원본 쿼리</div>
+                        <div class="generated-field-value">${escapeHtml(data.original_query)}</div>
+                    </div>
+                    
+                    <div class="generated-field">
+                        <div class="generated-field-label">✨ 최적화된 쿼리</div>
+                        <div class="generated-field-value" style="border: 1px solid var(--accent-green); background: rgba(59, 185, 80, 0.1);">${escapeHtml(data.optimized_query)}</div>
+                    </div>
+                    
+                    ${data.estimated_improvement ? `
+                    <div class="generated-field">
+                        <div class="generated-field-label">예상 성능 향상</div>
+                        <div class="generated-field-value"><span class="badge green">${data.estimated_improvement}</span></div>
+                    </div>` : ''}
+                    
+                    <div class="generated-field">
+                        <div class="generated-field-label">개선 제안</div>
+                        <div class="generated-field-value">
+                            ${data.suggestions?.map(s => `
+                                <div style="margin-bottom: 8px; padding: 8px; background: var(--bg-tertiary); border-radius: 4px; border-left: 3px solid ${s.priority === 'HIGH' ? 'var(--accent-red)' : s.priority === 'MEDIUM' ? 'var(--accent-orange)' : 'var(--accent-blue)'};">
+                                    <span class="badge ${s.priority === 'HIGH' ? 'red' : s.priority === 'MEDIUM' ? 'blue' : 'green'}">${s.priority}</span>
+                                    <span class="badge purple">${s.type}</span>
+                                    <span style="margin-left: 8px;">${escapeHtml(s.message)}</span>
+                                </div>
+                            `).join('') || '없음'}
+                        </div>
+                    </div>
+                    
+                    ${data.index_recommendations?.length ? `
+                    <div class="generated-field">
+                        <div class="generated-field-label">인덱스 권장</div>
+                        <div class="generated-field-value">
+                            ${data.index_recommendations.map(idx => `
+                                <div style="margin-bottom: 6px;">
+                                    <code>CREATE ${idx.type} INDEX ON ${idx.table}(${idx.columns?.join(', ')})</code>
+                                    <br><span style="font-size: 10px; color: var(--text-secondary);">${escapeHtml(idx.reason || '')}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>` : ''}
+                    
+                    <div class="generated-field">
+                        <div class="generated-field-label">설명</div>
+                        <div class="generated-field-value">${escapeHtml(data.explanation)}</div>
+                    </div>
+                    
+                    <button class="submit-btn" style="margin-top: 14px;" onclick="copyToClipboard(\`${escapeHtml(data.optimized_query).replace(/`/g, '\\`')}\`)">📋 최적화 쿼리 복사</button>
+                </div>`;
+                
+                resultDiv.innerHTML = html;
+                
+            } catch (e) {
+                resultDiv.innerHTML = `<div class="alert warning">❌ ${e.message}</div>`;
+            }
+        }
+        
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => alert('✅ 복사되었습니다'));
+        }
+        
+        // Test Case Generation
+        async function generateTestCases() {
+            const apiId = document.getElementById('testcaseApiSelect').value;
+            if (!apiId) { alert('API를 선택하세요'); return; }
+            
+            const resultDiv = document.getElementById('testcaseResult');
+            resultDiv.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            
+            try {
+                const res = await fetch('/schema/ai/generate-test-cases', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        route_id: apiId,
+                        model: document.getElementById('testcaseLlmModel').value
+                    })
+                });
+                
+                if (!res.ok) throw new Error((await res.json()).detail?.message || 'AI 호출 실패');
+                const result = await res.json();
+                const data = result.data;
+                
+                const typeColors = {
+                    positive: 'green',
+                    negative: 'red',
+                    boundary: 'blue',
+                    performance: 'purple'
+                };
+                
+                let html = `<div class="generated-result">
+                    <h4>🧪 생성된 테스트 케이스 (${data.total_cases}개)</h4>
+                    
+                    <div style="margin-bottom: 14px;">
+                        <span class="badge green">Positive: ${data.test_cases?.filter(t => t.test_type === 'positive').length || 0}</span>
+                        <span class="badge red">Negative: ${data.test_cases?.filter(t => t.test_type === 'negative').length || 0}</span>
+                        <span class="badge blue">Boundary: ${data.test_cases?.filter(t => t.test_type === 'boundary').length || 0}</span>
+                        <span class="badge purple">Performance: ${data.test_cases?.filter(t => t.test_type === 'performance').length || 0}</span>
+                    </div>
+                    
+                    <div class="audit-list">
+                        ${data.test_cases?.map((tc, i) => `
+                            <div class="audit-item" style="border-left-color: var(--accent-${typeColors[tc.test_type] || 'blue'});">
+                                <div class="audit-header">
+                                    <span class="audit-action">${tc.name}</span>
+                                    <span class="badge ${typeColors[tc.test_type] || 'blue'}">${tc.test_type}</span>
+                                </div>
+                                <div class="audit-details" style="margin-top: 8px;">
+                                    <strong>설명:</strong> ${escapeHtml(tc.description)}<br>
+                                    <strong>파라미터:</strong> <code>${JSON.stringify(tc.params)}</code><br>
+                                    <strong>예상 동작:</strong> ${escapeHtml(tc.expected_behavior)}
+                                </div>
+                                <button class="fill-sample-btn" style="margin-top: 8px;" onclick="runTestCase('${apiId}', ${JSON.stringify(tc.params).replace(/"/g, '&quot;')})">▶ 실행</button>
+                            </div>
+                        `).join('') || '<div>테스트 케이스 없음</div>'}
+                    </div>
+                    
+                    <button class="submit-btn" style="margin-top: 14px;" onclick="downloadTestCases(${JSON.stringify(data).replace(/"/g, '&quot;')})">📥 JSON으로 내보내기</button>
+                </div>`;
+                
+                resultDiv.innerHTML = html;
+                
+            } catch (e) {
+                resultDiv.innerHTML = `<div class="alert warning">❌ ${e.message}</div>`;
+            }
+        }
+        
+        async function runTestCase(apiId, params) {
+            await selectApi(apiId);
+            switchTab('request');
+            
+            for (const [key, val] of Object.entries(params)) {
+                const input = document.getElementById(`param-${key}`);
+                if (input) input.value = typeof val === 'object' ? JSON.stringify(val) : val;
+            }
+            
+            setTimeout(() => sendRequest(), 500);
+        }
+        
+        function downloadTestCases(data) {
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `test-cases-${data.api_path?.replace(/\//g, '-') || 'api'}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+        
+        // Initialize AI features tab when opened
+        function initAiFeatures() {
+            if (tables.length === 0) loadTables();
+            if (llmModels.length === 0) loadLLMModels();
+            showAiSubTab('chat');
         }
         
         document.getElementById('searchInput').addEventListener('input', e => renderApiList(e.target.value));

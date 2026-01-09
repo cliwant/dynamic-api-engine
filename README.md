@@ -10,6 +10,7 @@ MySQL 테이블 행 추가/수정만으로 API를 생성하고 관리하는 **�
 - **버전 관리**: 모든 변경 사항을 버전으로 관리, 언제든 롤백 가능
 - **감사 로그**: 모든 변경 이력을 자동 기록
 - **보안**: SQL Injection 방지, Soft Delete, API 키 인증
+- **🧠 AI 기능**: LLM 기반 API 생성, SQL 최적화, 테스트 케이스 생성, 자연어 API 호출
 
 ## 📁 프로젝트 구조
 
@@ -201,6 +202,74 @@ uvicorn app.main:app --reload
   }
 }
 ```
+
+## 🧠 AI 기능 (v1.8.0+)
+
+Vertex AI Gemini 2.5/3.0을 활용한 강력한 AI 기능들:
+
+### 💬 자연어 API 호출
+
+자연어로 질문하면 AI가 적합한 API를 찾아 실행합니다.
+
+```bash
+POST /schema/ai/chat
+
+{
+  "question": "최근 가입한 사용자 10명 보여줘",
+  "auto_execute": true,
+  "model": "vertex_ai/gemini-2.5-flash"
+}
+```
+
+**응답 예시:**
+- 선택된 API: `GET /api/users/list`
+- 추출된 파라미터: `{"limit": 10}`
+- 신뢰도: 95%
+- 자동 실행 결과 포함
+
+### 🔧 SQL 최적화 제안
+
+SQL 쿼리를 분석하여 성능 개선 방안을 제안합니다.
+
+```bash
+POST /schema/ai/optimize-sql
+
+{
+  "sql_query": "SELECT * FROM APP_USER_L WHERE CMPNY_ID = :cmpny_id",
+  "table_names": ["APP_USER_L"],
+  "execution_time_ms": 500,
+  "model": "vertex_ai/gemini-2.5-flash"
+}
+```
+
+**제안 항목:**
+- 인덱스 활용 최적화
+- 쿼리 재작성 추천
+- JOIN 순서 최적화
+- 새 인덱스 생성 권장
+
+### 🧪 테스트 케이스 자동 생성
+
+API 정의를 분석하여 포괄적인 테스트 케이스를 생성합니다.
+
+```bash
+POST /schema/ai/generate-test-cases
+
+{
+  "route_id": "api-route-id",
+  "model": "vertex_ai/gemini-2.5-flash"
+}
+```
+
+**생성 케이스 유형:**
+| 유형 | 설명 | 최소 개수 |
+|------|------|----------|
+| Positive | 정상 동작 케이스 | 3개 |
+| Negative | 에러 케이스 (필수값 누락 등) | 2개 |
+| Boundary | 경계값 테스트 | 2개 |
+| Performance | 성능 테스트 | 1개 |
+
+---
 
 ## 🔒 보안 기능
 

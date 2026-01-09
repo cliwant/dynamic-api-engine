@@ -30,6 +30,7 @@ class ApiRoute(Base):
     # 메타데이터
     API_NAME = Column(String(255), nullable=True, comment="API 이름 (사람이 읽기 쉬운 이름)")
     API_DESC = Column(Text, nullable=True, comment="API 설명")
+    CATEGORY = Column(String(100), nullable=True, comment="API 카테고리")
     TAGS = Column(String(500), nullable=True, comment="태그 (쉼표로 구분)")
     
     # 상태 관리 (기존 패턴: char(1) Y/N)
@@ -84,6 +85,10 @@ class ApiRoute(Base):
     @property
     def tags(self):
         return self.TAGS
+    
+    @property
+    def category(self):
+        return self.CATEGORY
     
     @property
     def is_active(self):

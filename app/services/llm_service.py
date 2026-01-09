@@ -5,6 +5,7 @@ API 생성을 위한 프롬프트 엔지니어링을 담당합니다.
 """
 import json
 import os
+from pathlib import Path
 from typing import Optional, Any
 from pydantic import BaseModel
 
@@ -14,10 +15,16 @@ try:
 except ImportError:
     LITELLM_AVAILABLE = False
 
+# gcloud-key.json 경로 자동 설정
+GCLOUD_KEY_PATH = Path(__file__).parent.parent.parent / "gcloud-key.json"
+if GCLOUD_KEY_PATH.exists() and not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = str(GCLOUD_KEY_PATH)
+    print(f"✅ Vertex AI 인증 설정됨: {GCLOUD_KEY_PATH}")
+
 
 class LLMConfig(BaseModel):
     """LLM 설정"""
-    model: str = "gpt-4o-mini"
+    model: str = "vertex_ai/gemini-2.5-flash"  # 기본값: Vertex AI Gemini 2.5 Flash
     temperature: float = 0.7
     max_tokens: int = 4000
     top_p: float = 1.0
@@ -27,6 +34,8 @@ class LLMConfig(BaseModel):
     api_key: Optional[str] = None
     api_base: Optional[str] = None
     vertex_credentials: Optional[str] = None  # gcloud-key.json 내용
+    vertex_project: str = "cliwant-403702"  # 프로젝트 ID
+    vertex_location: str = "us-central1"  # 리전
 
 
 class TableSchema(BaseModel):
@@ -59,8 +68,26 @@ class GeneratedApiSpec(BaseModel):
     change_note: str
 
 
-# LiteLLM 지원 모델 목록 (주요 프로바이더)
+# LiteLLM 지원 모델 목록 (주요 프로바이더) - Vertex AI를 먼저 배치
+# Vertex AI Gemini는 2.5 이상 버전만 사용 가능 (2.5 ~ 3.0)
 SUPPORTED_MODELS = [
+    # Vertex AI (Google Cloud) - Gemini 2.5+ 전용, gcloud-key.json 자동 인증
+    {"id": "vertex_ai/gemini-2.5-flash", "name": "✨ Gemini 2.5 Flash (Vertex)", "provider": "vertex_ai", "auth": "vertex", "default": True},
+    {"id": "vertex_ai/gemini-2.5-pro", "name": "🚀 Gemini 2.5 Pro (Vertex)", "provider": "vertex_ai", "auth": "vertex"},
+    {"id": "vertex_ai/gemini-2.5-flash-preview-05-20", "name": "Gemini 2.5 Flash Preview (Vertex)", "provider": "vertex_ai", "auth": "vertex"},
+    {"id": "vertex_ai/gemini-2.5-pro-preview-05-06", "name": "Gemini 2.5 Pro Preview (Vertex)", "provider": "vertex_ai", "auth": "vertex"},
+    # Gemini 3.0 (향후 출시 예정)
+    {"id": "vertex_ai/gemini-3.0-flash", "name": "⚡ Gemini 3.0 Flash (Vertex)", "provider": "vertex_ai", "auth": "vertex"},
+    {"id": "vertex_ai/gemini-3.0-pro", "name": "🌟 Gemini 3.0 Pro (Vertex)", "provider": "vertex_ai", "auth": "vertex"},
+    # Vertex AI Claude (non-Gemini)
+    {"id": "vertex_ai/claude-3-5-sonnet@20241022", "name": "Claude 3.5 Sonnet (Vertex)", "provider": "vertex_ai", "auth": "vertex"},
+    {"id": "vertex_ai/claude-3-5-haiku@20241022", "name": "Claude 3.5 Haiku (Vertex)", "provider": "vertex_ai", "auth": "vertex"},
+    
+    # Google AI (Gemini) - API Key 방식
+    {"id": "gemini/gemini-2.5-flash", "name": "Gemini 2.5 Flash", "provider": "google", "auth": "api_key"},
+    {"id": "gemini/gemini-2.5-pro", "name": "Gemini 2.5 Pro", "provider": "google", "auth": "api_key"},
+    {"id": "gemini/gemini-2.5-flash-preview-05-20", "name": "Gemini 2.5 Flash Preview", "provider": "google", "auth": "api_key"},
+    
     # OpenAI
     {"id": "gpt-4o", "name": "GPT-4o", "provider": "openai", "auth": "api_key"},
     {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "provider": "openai", "auth": "api_key"},
@@ -76,19 +103,6 @@ SUPPORTED_MODELS = [
     {"id": "claude-3-opus-20240229", "name": "Claude 3 Opus", "provider": "anthropic", "auth": "api_key"},
     {"id": "claude-3-sonnet-20240229", "name": "Claude 3 Sonnet", "provider": "anthropic", "auth": "api_key"},
     {"id": "claude-3-haiku-20240307", "name": "Claude 3 Haiku", "provider": "anthropic", "auth": "api_key"},
-    
-    # Google AI (Gemini)
-    {"id": "gemini/gemini-1.5-pro", "name": "Gemini 1.5 Pro", "provider": "google", "auth": "api_key"},
-    {"id": "gemini/gemini-1.5-flash", "name": "Gemini 1.5 Flash", "provider": "google", "auth": "api_key"},
-    {"id": "gemini/gemini-2.0-flash-exp", "name": "Gemini 2.0 Flash", "provider": "google", "auth": "api_key"},
-    {"id": "gemini/gemini-pro", "name": "Gemini Pro", "provider": "google", "auth": "api_key"},
-    
-    # Vertex AI (Google Cloud)
-    {"id": "vertex_ai/gemini-1.5-pro", "name": "Gemini 1.5 Pro (Vertex)", "provider": "vertex_ai", "auth": "vertex"},
-    {"id": "vertex_ai/gemini-1.5-flash", "name": "Gemini 1.5 Flash (Vertex)", "provider": "vertex_ai", "auth": "vertex"},
-    {"id": "vertex_ai/gemini-pro", "name": "Gemini Pro (Vertex)", "provider": "vertex_ai", "auth": "vertex"},
-    {"id": "vertex_ai/claude-3-5-sonnet@20241022", "name": "Claude 3.5 Sonnet (Vertex)", "provider": "vertex_ai", "auth": "vertex"},
-    {"id": "vertex_ai/claude-3-5-haiku@20241022", "name": "Claude 3.5 Haiku (Vertex)", "provider": "vertex_ai", "auth": "vertex"},
     
     # Azure OpenAI
     {"id": "azure/gpt-4o", "name": "GPT-4o (Azure)", "provider": "azure", "auth": "azure"},
@@ -248,9 +262,13 @@ HTTP 메서드: {request.method}
 
 def _setup_vertex_auth(config: LLMConfig) -> None:
     """Vertex AI 인증 설정"""
+    # gcloud-key.json 파일이 이미 설정되어 있으면 사용
+    if os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+        return
+    
+    # vertex_credentials가 제공된 경우 임시 파일로 저장
     if config.vertex_credentials:
         import tempfile
-        # JSON 문자열을 임시 파일로 저장
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             f.write(config.vertex_credentials)
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f.name
@@ -284,6 +302,11 @@ async def generate_api_spec(
         "max_tokens": config.max_tokens,
         "top_p": config.top_p,
     }
+    
+    # Vertex AI 설정
+    if config.model.startswith("vertex_ai/"):
+        completion_kwargs["vertex_project"] = config.vertex_project
+        completion_kwargs["vertex_location"] = config.vertex_location
     
     # API 키/베이스 설정
     if config.api_key:
@@ -334,3 +357,351 @@ def check_llm_availability() -> dict:
     result["available"] = result["litellm_installed"] and any(result["env_keys"].values())
     
     return result
+
+
+# ==================== AI 기능 확장 ====================
+
+class SqlOptimizationRequest(BaseModel):
+    """SQL 최적화 요청"""
+    sql_query: str
+    table_schemas: list[dict]  # 테이블 스키마 정보
+    indexes: list[dict] = []   # 사용 가능한 인덱스
+    execution_time_ms: Optional[float] = None  # 현재 실행 시간
+
+
+class SqlOptimizationResult(BaseModel):
+    """SQL 최적화 결과"""
+    original_query: str
+    optimized_query: str
+    suggestions: list[dict]  # [{"type": "INDEX", "message": "...", "priority": "HIGH"}]
+    index_recommendations: list[dict]  # 새 인덱스 제안
+    explanation: str
+    estimated_improvement: Optional[str] = None
+
+
+class TestCaseGenerationRequest(BaseModel):
+    """테스트 케이스 생성 요청"""
+    api_path: str
+    method: str
+    request_spec: dict
+    logic_body: str
+    sample_data: list[dict] = []
+
+
+class TestCase(BaseModel):
+    """단일 테스트 케이스"""
+    name: str
+    description: str
+    params: dict
+    expected_behavior: str
+    test_type: str  # "positive", "negative", "boundary", "performance"
+
+
+class TestCaseGenerationResult(BaseModel):
+    """테스트 케이스 생성 결과"""
+    api_path: str
+    total_cases: int
+    test_cases: list[TestCase]
+
+
+class NaturalLanguageQueryRequest(BaseModel):
+    """자연어 쿼리 요청"""
+    question: str
+    available_apis: list[dict]  # 사용 가능한 API 목록
+
+
+class NaturalLanguageQueryResult(BaseModel):
+    """자연어 쿼리 결과"""
+    question: str
+    selected_api: Optional[dict] = None  # 선택된 API
+    params: dict = {}  # 추출된 파라미터
+    confidence: float = 0.0  # 신뢰도 (0~1)
+    explanation: str = ""  # 해석 설명
+    alternative_apis: list[dict] = []  # 대안 API 목록
+
+
+def _build_sql_optimization_prompt(request: SqlOptimizationRequest) -> str:
+    """SQL 최적화 프롬프트 생성"""
+    return f"""당신은 MySQL 쿼리 최적화 전문가입니다. 주어진 SQL 쿼리를 분석하고 성능 개선 방안을 제시해주세요.
+
+## 분석 대상 쿼리
+```sql
+{request.sql_query}
+```
+
+## 테이블 스키마
+{json.dumps(request.table_schemas, indent=2, ensure_ascii=False)}
+
+## 사용 가능한 인덱스
+{json.dumps(request.indexes, indent=2, ensure_ascii=False)}
+
+{f"## 현재 실행 시간: {request.execution_time_ms}ms" if request.execution_time_ms else ""}
+
+## 요청사항
+다음 JSON 형식으로 최적화 결과를 반환해주세요:
+
+```json
+{{
+  "original_query": "원본 쿼리",
+  "optimized_query": "최적화된 쿼리",
+  "suggestions": [
+    {{"type": "INDEX|REWRITE|JOIN|LIMIT", "message": "개선 사항 설명", "priority": "HIGH|MEDIUM|LOW"}}
+  ],
+  "index_recommendations": [
+    {{"table": "테이블명", "columns": ["컬럼1", "컬럼2"], "type": "INDEX|UNIQUE|FULLTEXT", "reason": "이유"}}
+  ],
+  "explanation": "전반적인 설명 (한글)",
+  "estimated_improvement": "예상 성능 향상 (예: 50% 개선)"
+}}
+```
+
+규칙:
+1. 인덱스를 효과적으로 활용하도록 쿼리 수정
+2. 불필요한 컬럼 선택 제거
+3. JOIN 순서 최적화
+4. WHERE 절 조건 순서 최적화
+5. LIMIT 활용 권장
+6. 서브쿼리보다 JOIN 선호"""
+
+
+def _build_test_case_prompt(request: TestCaseGenerationRequest) -> str:
+    """테스트 케이스 생성 프롬프트"""
+    return f"""당신은 API 테스트 전문가입니다. 주어진 API 정의를 분석하여 포괄적인 테스트 케이스를 생성해주세요.
+
+## API 정보
+- 경로: {request.api_path}
+- 메서드: {request.method}
+- 요청 스펙: {json.dumps(request.request_spec, indent=2, ensure_ascii=False)}
+
+## SQL 로직
+```sql
+{request.logic_body}
+```
+
+## 샘플 데이터
+{json.dumps(request.sample_data[:3], indent=2, ensure_ascii=False, default=str)}
+
+## 요청사항
+다음 JSON 형식으로 테스트 케이스를 생성해주세요:
+
+```json
+{{
+  "api_path": "API 경로",
+  "total_cases": 테스트케이스수,
+  "test_cases": [
+    {{
+      "name": "테스트케이스명",
+      "description": "설명 (한글)",
+      "params": {{"param1": "value1"}},
+      "expected_behavior": "예상 동작 (한글)",
+      "test_type": "positive|negative|boundary|performance"
+    }}
+  ]
+}}
+```
+
+테스트 케이스 유형별 최소 개수:
+1. positive (정상 케이스): 3개 이상
+2. negative (에러 케이스): 2개 이상 - 필수 파라미터 누락, 잘못된 타입 등
+3. boundary (경계값 테스트): 2개 이상 - 빈 문자열, 최대/최소값, 특수문자 등
+4. performance (성능 테스트): 1개 이상 - 대량 데이터 조회 등
+
+샘플 데이터의 실제 값을 활용하여 현실적인 테스트 파라미터를 생성하세요."""
+
+
+def _build_natural_language_query_prompt(request: NaturalLanguageQueryRequest) -> str:
+    """자연어 쿼리 프롬프트"""
+    # API 목록을 간략하게 정리
+    apis_summary = []
+    for api in request.available_apis:
+        apis_summary.append({
+            "route_id": api.get("route_id"),
+            "path": api.get("path"),
+            "method": api.get("method"),
+            "name": api.get("name"),
+            "description": api.get("description", ""),
+            "request_spec": api.get("request_spec", {}),
+        })
+    
+    return f"""당신은 API 검색 및 파라미터 추출 전문가입니다. 사용자의 자연어 질문을 분석하여 가장 적합한 API를 찾고 파라미터를 추출해주세요.
+
+## 사용자 질문
+"{request.question}"
+
+## 사용 가능한 API 목록
+{json.dumps(apis_summary, indent=2, ensure_ascii=False)}
+
+## 요청사항
+다음 JSON 형식으로 결과를 반환해주세요:
+
+```json
+{{
+  "question": "원본 질문",
+  "selected_api": {{
+    "route_id": "선택된 API ID",
+    "path": "API 경로",
+    "method": "HTTP 메서드"
+  }},
+  "params": {{"param_name": "추출된값"}},
+  "confidence": 0.95,
+  "explanation": "해석 설명 (한글) - 왜 이 API를 선택했고, 파라미터를 어떻게 추출했는지",
+  "alternative_apis": [
+    {{"route_id": "대안 API ID", "path": "경로", "reason": "이 API도 사용 가능한 이유"}}
+  ]
+}}
+```
+
+규칙:
+1. 질문에서 언급된 키워드로 가장 적합한 API를 찾으세요.
+2. 질문에서 파라미터 값을 추출하세요 (예: "홍길동 사용자" → {{"user_name": "홍길동"}})
+3. 숫자, 날짜, ID 등을 자동으로 인식하여 파라미터에 매핑하세요.
+4. 확실하지 않으면 confidence를 낮게 설정하세요.
+5. 적합한 API가 없으면 selected_api를 null로 설정하고 설명하세요.
+6. 여러 API가 가능하면 alternative_apis에 추가하세요."""
+
+
+async def optimize_sql(
+    request: SqlOptimizationRequest,
+    config: LLMConfig = LLMConfig()
+) -> SqlOptimizationResult:
+    """SQL 쿼리 최적화 제안"""
+    if not LITELLM_AVAILABLE:
+        raise ImportError("litellm 라이브러리가 설치되어 있지 않습니다.")
+    
+    if config.vertex_credentials:
+        _setup_vertex_auth(config)
+    
+    prompt = _build_sql_optimization_prompt(request)
+    
+    completion_kwargs = {
+        "model": config.model,
+        "messages": [
+            {"role": "system", "content": "당신은 MySQL 쿼리 최적화 전문가입니다. 반드시 유효한 JSON만 반환하세요."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3,  # 일관성 있는 결과를 위해 낮은 온도
+        "max_tokens": config.max_tokens,
+    }
+    
+    if config.model.startswith("vertex_ai/"):
+        completion_kwargs["vertex_project"] = config.vertex_project
+        completion_kwargs["vertex_location"] = config.vertex_location
+    
+    if config.api_key:
+        completion_kwargs["api_key"] = config.api_key
+    
+    try:
+        response = await litellm.acompletion(**completion_kwargs)
+        content = response.choices[0].message.content.strip()
+        
+        # JSON 추출
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        
+        result_dict = json.loads(content)
+        return SqlOptimizationResult(**result_dict)
+        
+    except json.JSONDecodeError as e:
+        raise ValueError(f"LLM 응답을 JSON으로 파싱할 수 없습니다: {e}")
+    except Exception as e:
+        raise RuntimeError(f"LLM 호출 실패: {e}")
+
+
+async def generate_test_cases(
+    request: TestCaseGenerationRequest,
+    config: LLMConfig = LLMConfig()
+) -> TestCaseGenerationResult:
+    """API 테스트 케이스 자동 생성"""
+    if not LITELLM_AVAILABLE:
+        raise ImportError("litellm 라이브러리가 설치되어 있지 않습니다.")
+    
+    if config.vertex_credentials:
+        _setup_vertex_auth(config)
+    
+    prompt = _build_test_case_prompt(request)
+    
+    completion_kwargs = {
+        "model": config.model,
+        "messages": [
+            {"role": "system", "content": "당신은 API 테스트 케이스 생성 전문가입니다. 반드시 유효한 JSON만 반환하세요."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.5,
+        "max_tokens": config.max_tokens,
+    }
+    
+    if config.model.startswith("vertex_ai/"):
+        completion_kwargs["vertex_project"] = config.vertex_project
+        completion_kwargs["vertex_location"] = config.vertex_location
+    
+    if config.api_key:
+        completion_kwargs["api_key"] = config.api_key
+    
+    try:
+        response = await litellm.acompletion(**completion_kwargs)
+        content = response.choices[0].message.content.strip()
+        
+        # JSON 추출
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        
+        result_dict = json.loads(content)
+        return TestCaseGenerationResult(**result_dict)
+        
+    except json.JSONDecodeError as e:
+        raise ValueError(f"LLM 응답을 JSON으로 파싱할 수 없습니다: {e}")
+    except Exception as e:
+        raise RuntimeError(f"LLM 호출 실패: {e}")
+
+
+async def process_natural_language_query(
+    request: NaturalLanguageQueryRequest,
+    config: LLMConfig = LLMConfig()
+) -> NaturalLanguageQueryResult:
+    """자연어로 API 호출"""
+    if not LITELLM_AVAILABLE:
+        raise ImportError("litellm 라이브러리가 설치되어 있지 않습니다.")
+    
+    if config.vertex_credentials:
+        _setup_vertex_auth(config)
+    
+    prompt = _build_natural_language_query_prompt(request)
+    
+    completion_kwargs = {
+        "model": config.model,
+        "messages": [
+            {"role": "system", "content": "당신은 사용자의 자연어 질문을 분석하여 적합한 API를 찾는 전문가입니다. 반드시 유효한 JSON만 반환하세요."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3,
+        "max_tokens": config.max_tokens,
+    }
+    
+    if config.model.startswith("vertex_ai/"):
+        completion_kwargs["vertex_project"] = config.vertex_project
+        completion_kwargs["vertex_location"] = config.vertex_location
+    
+    if config.api_key:
+        completion_kwargs["api_key"] = config.api_key
+    
+    try:
+        response = await litellm.acompletion(**completion_kwargs)
+        content = response.choices[0].message.content.strip()
+        
+        # JSON 추출
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        
+        result_dict = json.loads(content)
+        return NaturalLanguageQueryResult(**result_dict)
+        
+    except json.JSONDecodeError as e:
+        raise ValueError(f"LLM 응답을 JSON으로 파싱할 수 없습니다: {e}")
+    except Exception as e:
+        raise RuntimeError(f"LLM 호출 실패: {e}")

@@ -21,6 +21,13 @@ from app.services.llm_service import (
     TableSchema,
     LLMConfig,
     GeneratedApiSpec,
+    # AI 기능 확장
+    optimize_sql,
+    generate_test_cases,
+    process_natural_language_query,
+    SqlOptimizationRequest,
+    TestCaseGenerationRequest,
+    NaturalLanguageQueryRequest,
 )
 
 router = APIRouter(prefix="/schema", tags=["Schema & LLM"])
@@ -376,6 +383,283 @@ async def generate_api_with_llm(
             status_code=422,
             detail={"error": "PARSING_ERROR", "message": str(e)}
         )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "LLM_ERROR", "message": str(e)}
+        )
+
+
+# ==================== AI 기능 확장 ====================
+
+class OptimizeSqlRequest(BaseModel):
+    """SQL 최적화 요청"""
+    sql_query: str
+    table_names: list[str]
+    execution_time_ms: Optional[float] = None
+    # LLM 설정
+    model: str = "vertex_ai/gemini-2.5-flash"
+    api_key: Optional[str] = None
+
+
+@router.post(
+    "/ai/optimize-sql",
+    summary="🔧 SQL 최적화 제안",
+    description="LLM을 사용하여 SQL 쿼리 성능 개선 방안을 제안합니다.",
+)
+async def optimize_sql_endpoint(
+    request: OptimizeSqlRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    SQL 최적화 제안
+    
+    - 인덱스 활용 최적화
+    - 쿼리 재작성 제안
+    - JOIN 순서 최적화
+    - 새 인덱스 추천
+    """
+    # 테이블 스키마 및 인덱스 정보 조회
+    table_schemas = []
+    all_indexes = []
+    
+    for table_name in request.table_names:
+        columns = await schema_service.get_table_columns(db, table_name)
+        if columns:
+            table_schemas.append({
+                "table_name": table_name,
+                "columns": columns,
+            })
+        
+        indexes = await schema_service.get_table_indexes(db, table_name)
+        for idx in indexes:
+            idx["table"] = table_name
+            all_indexes.append(idx)
+    
+    if not table_schemas:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "VALIDATION_ERROR", "message": "유효한 테이블을 선택해주세요."}
+        )
+    
+    try:
+        llm_request = SqlOptimizationRequest(
+            sql_query=request.sql_query,
+            table_schemas=table_schemas,
+            indexes=all_indexes,
+            execution_time_ms=request.execution_time_ms,
+        )
+        
+        config = LLMConfig(
+            model=request.model,
+            api_key=request.api_key,
+        )
+        
+        result = await optimize_sql(llm_request, config)
+        
+        return ResponseBase(
+            message="SQL 최적화 분석이 완료되었습니다.",
+            data=result.model_dump(),
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "LLM_ERROR", "message": str(e)}
+        )
+
+
+class GenerateTestCasesRequest(BaseModel):
+    """테스트 케이스 생성 요청"""
+    route_id: str
+    # LLM 설정
+    model: str = "vertex_ai/gemini-2.5-flash"
+    api_key: Optional[str] = None
+
+
+@router.post(
+    "/ai/generate-test-cases",
+    summary="🧪 테스트 케이스 자동 생성",
+    description="LLM을 사용하여 API 테스트 케이스를 자동으로 생성합니다.",
+)
+async def generate_test_cases_endpoint(
+    request: GenerateTestCasesRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    API 테스트 케이스 자동 생성
+    
+    - 정상 케이스 (positive)
+    - 에러 케이스 (negative)
+    - 경계값 테스트 (boundary)
+    - 성능 테스트 (performance)
+    """
+    from app.services import api_route_service, api_version_service
+    
+    # API 정보 조회
+    route = await api_route_service.ApiRouteService.get_by_id(db, request.route_id)
+    if not route:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "NOT_FOUND", "message": "API를 찾을 수 없습니다."}
+        )
+    
+    # 현재 버전 조회
+    version = await api_version_service.ApiVersionService.get_current(db, request.route_id)
+    if not version:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "NOT_FOUND", "message": "현재 버전을 찾을 수 없습니다."}
+        )
+    
+    # 샘플 데이터 (SQL에서 테이블명 추출하여 조회)
+    sample_data = []
+    if version.logic_type == "SQL":
+        # 간단한 테이블명 추출 (FROM 다음 단어)
+        import re
+        match = re.search(r'FROM\s+[`"]?(\w+)[`"]?', version.logic_body, re.IGNORECASE)
+        if match:
+            table_name = match.group(1)
+            sample_data = await schema_service.get_table_sample_data(db, table_name, 3)
+    
+    try:
+        llm_request = TestCaseGenerationRequest(
+            api_path=f"{route.method} {route.path}",
+            method=route.method,
+            request_spec=version.request_spec or {},
+            logic_body=version.logic_body or "",
+            sample_data=sample_data,
+        )
+        
+        config = LLMConfig(
+            model=request.model,
+            api_key=request.api_key,
+        )
+        
+        result = await generate_test_cases(llm_request, config)
+        
+        return ResponseBase(
+            message="테스트 케이스가 생성되었습니다.",
+            data=result.model_dump(),
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "LLM_ERROR", "message": str(e)}
+        )
+
+
+class ChatApiRequest(BaseModel):
+    """자연어 API 호출 요청"""
+    question: str
+    auto_execute: bool = False  # True면 자동으로 API 실행
+    # LLM 설정
+    model: str = "vertex_ai/gemini-2.5-flash"
+    api_key: Optional[str] = None
+
+
+@router.post(
+    "/ai/chat",
+    summary="💬 자연어 API 호출",
+    description="자연어로 질문하면 적합한 API를 찾아 실행합니다.",
+)
+async def chat_api_endpoint(
+    request: ChatApiRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    자연어로 API 호출
+    
+    예시 질문:
+    - "최근 가입한 사용자 10명 보여줘"
+    - "홍길동 회사 정보 조회해줘"
+    - "진행 중인 프로젝트 목록"
+    """
+    from app.services import api_route_service, api_version_service
+    from app.services.executor_service import ExecutorService
+    
+    # 활성화된 API 목록 조회
+    routes_data, total = await api_route_service.ApiRouteService.list_routes(db, page=1, size=100)
+    
+    # API 정보 정리 (LLM에 전달할 형식)
+    available_apis = []
+    for route in routes_data:
+        if route.is_active:
+            # 현재 버전 조회
+            version = await api_version_service.ApiVersionService.get_current_version(db, route.id)
+            available_apis.append({
+                "route_id": route.id,
+                "path": route.path,
+                "method": route.method,
+                "name": route.name,
+                "description": route.description or "",
+                "request_spec": version.request_spec if version else {},
+                "sample_params": version.sample_params if version else {},
+            })
+    
+    if not available_apis:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "NOT_FOUND", "message": "사용 가능한 API가 없습니다."}
+        )
+    
+    try:
+        llm_request = NaturalLanguageQueryRequest(
+            question=request.question,
+            available_apis=available_apis,
+        )
+        
+        config = LLMConfig(
+            model=request.model,
+            api_key=request.api_key,
+        )
+        
+        result = await process_natural_language_query(llm_request, config)
+        
+        response_data = {
+            "question": result.question,
+            "interpretation": {
+                "selected_api": result.selected_api,
+                "params": result.params,
+                "confidence": result.confidence,
+                "explanation": result.explanation,
+                "alternatives": result.alternative_apis,
+            },
+            "execution_result": None,
+        }
+        
+        # 자동 실행 옵션이 켜져 있고 API가 선택되었으면 실행
+        if request.auto_execute and result.selected_api and result.confidence >= 0.7:
+            try:
+                route_id = result.selected_api.get("route_id")
+                version = await api_version_service.ApiVersionService.get_current(db, route_id)
+                
+                if version:
+                    # API 실행
+                    exec_result = await ExecutorService.execute(
+                        db=db,
+                        logic_type=version.logic_type,
+                        logic_body=version.logic_body,
+                        params=result.params,
+                    )
+                    
+                    response_data["execution_result"] = {
+                        "success": True,
+                        "data": exec_result,
+                    }
+                    
+            except Exception as exec_error:
+                response_data["execution_result"] = {
+                    "success": False,
+                    "error": str(exec_error),
+                }
+        
+        return ResponseBase(
+            message="자연어 분석이 완료되었습니다." if not response_data["execution_result"] else "API가 실행되었습니다.",
+            data=response_data,
+        )
+        
     except Exception as e:
         raise HTTPException(
             status_code=500,
