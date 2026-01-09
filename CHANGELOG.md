@@ -2,6 +2,36 @@
 
 이 문서는 Prompt API Engine의 모든 주요 변경 사항을 기록합니다.
 
+## [1.9.3] - 2026-01-09 19:10
+
+### 🛡️ 즉시 실행 가능한 보안 개선 적용
+
+진단 보고서에서 식별된 P0 항목 중 즉시 적용 가능한 3가지를 구현했습니다.
+
+#### 1. CORS 설정 강화
+- `allow_origins=["*"]` → 환경변수 기반 도메인 제한
+- 기본값: `http://localhost:8000,http://127.0.0.1:8000`
+- `CORS_ORIGINS` 환경변수로 커스터마이징 가능
+- CSRF 공격 방어
+
+#### 2. PYTHON_EXPR 비활성화 (RCE 차단)
+- `eval()` 사용하는 로직 타입 실행 완전 차단
+- 호출 시 명확한 에러 메시지와 대안 안내
+- 대안: `MULTI_SQL`, `PIPELINE`, `STATIC_RESPONSE`
+
+#### 3. auto_execute 기본값 False로 변경
+- 자연어 쿼리/API 자동 실행 기본 비활성화
+- UI에 ⚠️ 경고 메시지 추가
+- Human-in-the-loop 프로세스 강화
+
+#### 변경 파일
+- `app/core/config.py` - CORS 설정 추가
+- `app/main.py` - CORS 미들웨어 강화
+- `app/services/executor_service.py` - PYTHON_EXPR 비활성화
+- `app/static/index.html` - auto_execute 기본값 및 경고 메시지
+
+---
+
 ## [1.9.2] - 2026-01-09 18:40
 
 ### 🔒 보안 및 아키텍처 진단 보고서 v2.0
