@@ -605,16 +605,18 @@ uvicorn app.main:app --reload
 
 ## 📝 지원 로직 타입
 
-| 타입 | 설명 | 예시 |
-|------|------|------|
-| `SQL` | 단일 MySQL 쿼리 | `SELECT * FROM users WHERE id = :id` |
-| `MULTI_SQL` | 다중 쿼리 순차 실행 | 여러 테이블 조인 결과 조합 |
-| `PIPELINE` | 여러 로직 파이프라인 연결 | SQL → 변환 → 응답 |
-| `BIGQUERY` | Google BigQuery 쿼리 | 대용량 데이터 분석 |
-| `OPENSEARCH` | OpenSearch 검색 쿼리 | 전문 검색, 로그 분석 |
-| `PYTHON_EXPR` | Python 표현식 (제한적) | 간단한 데이터 변환 |
-| `HTTP_CALL` | 외부 API 호출 | 타 서비스 연동 |
-| `STATIC_RESPONSE` | 정적 JSON 응답 | 목업, 테스트용 |
+| 타입 | 설명 | 예시 | 상태 |
+|------|------|------|------|
+| `SQL` | 단일 MySQL 쿼리 | `SELECT * FROM users WHERE id = :id` | ✅ 사용 가능 |
+| `MULTI_SQL` | 다중 쿼리 순차 실행 | 여러 테이블 조인 결과 조합 | ✅ 사용 가능 |
+| `PIPELINE` | 여러 로직 파이프라인 연결 | SQL → 변환 → 응답 | ✅ 사용 가능 |
+| `BIGQUERY` | Google BigQuery 쿼리 | 대용량 데이터 분석 | ✅ 사용 가능 |
+| `OPENSEARCH` | OpenSearch 검색 쿼리 | 전문 검색, 로그 분석 | ✅ 사용 가능 |
+| `PYTHON_EXPR` | Python 표현식 | 간단한 데이터 변환 | ⛔ **비활성화** |
+| `HTTP_CALL` | 외부 API 호출 | 타 서비스 연동 | ✅ 사용 가능 |
+| `STATIC_RESPONSE` | 정적 JSON 응답 | 목업, 테스트용 | ✅ 사용 가능 |
+
+> ⚠️ **PYTHON_EXPR 비활성화:** RCE(원격 코드 실행) 보안 위험으로 인해 v1.9.3부터 비활성화되었습니다. 대안으로 `MULTI_SQL`, `PIPELINE`, `STATIC_RESPONSE`를 사용하세요.
 
 ## 🗄️ DB 테이블 구조
 
@@ -782,30 +784,42 @@ POST /schema/ai/generate-test-cases
 
 ## 🔒 보안 기능
 
-| 기능 | 설명 |
-|------|------|
-| **Immutable 정책** | API 정의는 추가만 가능, 수정/삭제 불가 |
-| **SQL Injection 방지** | DROP, TRUNCATE 등 위험 키워드 차단, 파라미터 바인딩 강제 |
-| **감사 로그** | 모든 변경 이력 기록 (누가, 언제, 무엇을) |
-| **버전 관리** | 기존 버전 보존, 언제든 이전 버전으로 전환 가능 |
-| **API 키 인증** | 관리자 API 접근 제어 |
+### 구현 완료된 보안 기능
+
+| 기능 | 설명 | 버전 |
+|------|------|------|
+| **Immutable 정책** | API 정의는 추가만 가능, 수정/삭제 불가 | v1.0 |
+| **SQL Injection 방지** | DROP, TRUNCATE 등 위험 키워드 차단, 파라미터 바인딩 강제 | v1.0 |
+| **감사 로그** | 모든 변경 이력 기록 (누가, 언제, 무엇을) | v1.0 |
+| **버전 관리** | 기존 버전 보존, 언제든 이전 버전으로 전환 가능 | v1.0 |
+| **CORS 설정 강화** | 환경변수 기반 도메인 제한 (`CORS_ORIGINS`) | v1.9.3 |
+| **PYTHON_EXPR 비활성화** | RCE 공격 방지를 위해 eval() 실행 차단 | v1.9.3 |
+| **auto_execute 기본 비활성화** | Human-in-the-loop 강화 | v1.9.3 |
+| **읽기 전용 DB 계정** | 자연어 SQL 쿼리용 별도 계정 분리 | v1.9.4 |
+| **SQL 실행 타임아웃** | 30초 기본 타임아웃, DoS 방지 | v1.9.4 |
+| **SQL Injection 정규화** | 주석/공백 변형 우회 공격 차단 | v1.9.4 |
+| **민감 컬럼 마스킹** | password, token 등 LLM 노출 방지 | v1.9.4 |
 
 ### ⚠️ 보안 진단 보고서
 
 자연어 SQL 쿼리 생성 기능에 대한 상세 보안 분석은 **[SECURITY_ASSESSMENT.md](./SECURITY_ASSESSMENT.md)** 문서를 참조하세요.
 
-**주요 권고사항:**
+**보안 개선 현황:**
 | 우선순위 | 항목 | 상태 |
 |----------|------|------|
-| 🔴 P0 | 인증/권한 시스템 추가 | 개선 필요 |
-| 🔴 P0 | 읽기 전용 DB 사용자 분리 | 개선 필요 |
-| 🔴 P0 | CORS 설정 강화 | 개선 필요 |
-| 🟠 P1 | 민감 컬럼 서버 측 검증 | 개선 권장 |
-| 🟠 P1 | Prompt Injection 방어 | 개선 권장 |
-| 🟡 P2 | Rate Limiting | 개선 권장 |
-| 🟡 P2 | 감사 로그 강화 | 개선 권장 |
+| 🔴 P0 | CORS 설정 강화 | ✅ 완료 (v1.9.3) |
+| 🔴 P0 | PYTHON_EXPR 비활성화 | ✅ 완료 (v1.9.3) |
+| 🔴 P0 | 읽기 전용 DB 사용자 분리 | ✅ 완료 (v1.9.4) |
+| 🔴 P0 | SQL 실행 타임아웃 | ✅ 완료 (v1.9.4) |
+| 🟠 P1 | 민감 컬럼 서버 측 마스킹 | ✅ 완료 (v1.9.4) |
+| 🟠 P1 | SQL Injection 정규화 | ✅ 완료 (v1.9.4) |
+| 🔴 High | API Key 인증 강화 | 📋 추후 진행 |
+| 🔴 High | JWT 인증 | 📋 추후 진행 |
+| 🔴 High | Redis 캐싱 | 📋 추후 진행 |
+| 🟡 Medium | RBAC 권한 관리 | 📋 추후 진행 |
+| 🟡 Medium | Rate Limiting | 📋 추후 진행 |
 
-> ⚠️ **프로덕션 배포 전 최소한 P0 항목들을 해결하세요.**
+> ℹ️ **P0 항목 대부분 완료됨.** 프로덕션 배포 전 인증/캐싱 시스템 추가를 권장합니다.
 
 ### 🔒 Immutable 정책
 
