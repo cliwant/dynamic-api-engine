@@ -2,6 +2,41 @@
 
 이 문서는 Prompt API Engine의 모든 주요 변경 사항을 기록합니다.
 
+## [1.9.4] - 2026-01-09 20:50
+
+### 🔐 읽기 전용 DB 계정 + 추가 보안 강화
+
+#### 1. 읽기 전용 DB 계정 구현
+- `MYSQL_READONLY_USER`, `MYSQL_READONLY_PASSWORD` 환경변수 추가
+- 자연어 SQL 쿼리 실행 시 읽기 전용 세션 사용
+- `scripts/create_readonly_user.sql` 계정 생성 스크립트 제공
+- 계정 미설정 시 경고 로그 출력
+
+#### 2. SQL 실행 타임아웃 추가
+- 기본 30초 타임아웃 적용
+- `asyncio.wait_for` 사용
+- 타임아웃 시 명확한 에러 메시지 반환
+
+#### 3. SQL Injection 패턴 검사 정규화
+- 주석 제거 후 검사 (`--`, `/* */`)
+- 연속 공백 정규화
+- 우회 공격 (주석 삽입, 공백 변형) 방지
+
+#### 4. 민감 컬럼 자동 마스킹
+- password, token, secret, api_key 등 패턴 매칭
+- 샘플 데이터 조회 시 자동 마스킹
+- LLM 프롬프트에 민감 정보 노출 방지
+
+#### 변경 파일
+- `app/core/config.py` - 읽기 전용 DB 설정 추가
+- `app/core/database.py` - 읽기 전용 엔진/세션 추가
+- `app/routers/schema_router.py` - 읽기 전용 세션 사용
+- `app/services/executor_service.py` - SQL 타임아웃 추가
+- `app/services/llm_service.py` - SQL Injection 정규화
+- `app/services/schema_service.py` - 민감 컬럼 마스킹
+
+---
+
 ## [1.9.3] - 2026-01-09 19:10
 
 ### 🛡️ 즉시 실행 가능한 보안 개선 적용
