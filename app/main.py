@@ -86,12 +86,17 @@ MySQL 테이블 행 추가/수정만으로 API를 생성하고 관리하는 동�
 # 요청/응답 로깅 미들웨어
 app.add_middleware(RequestLoggingMiddleware)
 
-# CORS 설정
+# CORS 설정 (보안 강화)
+# 환경 변수 CORS_ORIGINS로 허용 도메인 설정 가능 (쉼표 구분)
+# 예: CORS_ORIGINS=https://your-domain.com,https://admin.your-domain.com
+from app.core.config import get_settings
+_settings = get_settings()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 프로덕션에서는 특정 도메인으로 제한
+    allow_origins=_settings.cors_origins_list,  # 특정 도메인만 허용
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],  # 필요한 메서드만 허용
     allow_headers=["*"],
 )
 

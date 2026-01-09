@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     secret_key: str = os.getenv("SECRET_KEY", "your-super-secret-key-change-in-production")
     api_key: str = os.getenv("API_KEY", "your-admin-api-key")
     
+    # CORS 설정 (쉼표로 구분된 도메인 목록)
+    cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000")
+    
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """CORS 허용 도메인 목록 반환"""
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+    
     # Application
     app_name: str = "Prompt API Engine"
     debug: bool = os.getenv("ENV", "dev") == "dev"

@@ -106,7 +106,14 @@ class ExecutorService:
         elif logic_type == "OPENSEARCH":
             return await cls._execute_opensearch(logic_body, params, config)
         elif logic_type == "PYTHON_EXPR":
-            return cls._execute_python_expr(logic_body, params, config)
+            # ⚠️ 보안 위험으로 비활성화됨 (2026-01-09)
+            # eval()을 사용한 Python 코드 실행은 RCE(원격 코드 실행) 공격에 취약합니다.
+            # 대안: MULTI_SQL, PIPELINE, 또는 STATIC_RESPONSE 로직 타입을 사용하세요.
+            raise ExecutorError(
+                "PYTHON_EXPR 로직 타입은 보안상 비활성화되었습니다. "
+                "대안으로 MULTI_SQL, PIPELINE, 또는 STATIC_RESPONSE를 사용해주세요.",
+                "PYTHON_EXPR_DISABLED"
+            )
         elif logic_type == "HTTP_CALL":
             return await cls._execute_http_call(logic_body, params, config)
         elif logic_type == "STATIC_RESPONSE":

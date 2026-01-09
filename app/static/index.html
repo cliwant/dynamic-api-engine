@@ -446,9 +446,10 @@
                                         <div class="form-group">
                                             <label class="form-label">자동 실행</label>
                                             <select class="form-select" id="queryAutoExecute">
-                                                <option value="false">쿼리 생성만</option>
-                                                <option value="true" selected>보안 검사 통과 시 자동 실행</option>
+                                                <option value="false" selected>쿼리 생성만 (권장)</option>
+                                                <option value="true">⚠️ 보안 검사 통과 시 자동 실행</option>
                                             </select>
+                                            <small style="color: #f59e0b; font-size: 11px;">⚠️ 자동 실행 시 LLM 생성 쿼리가 바로 실행됩니다. 결과를 먼저 검토하세요.</small>
                                         </div>
                                         <div class="form-group">
                                             <label class="form-label">LLM 모델</label>
@@ -485,9 +486,10 @@
                                         <div class="form-group">
                                             <label class="form-label">자동 실행</label>
                                             <select class="form-select" id="chatAutoExecute">
-                                                <option value="false">분석만 (API 선택 + 파라미터 추출)</option>
-                                                <option value="true">자동 실행 (신뢰도 70% 이상)</option>
+                                                <option value="false" selected>분석만 (API 선택 + 파라미터 추출) (권장)</option>
+                                                <option value="true">⚠️ 자동 실행 (신뢰도 70% 이상)</option>
                                             </select>
+                                            <small style="color: #f59e0b; font-size: 11px;">⚠️ 자동 실행 시 AI가 선택한 API가 바로 실행됩니다.</small>
                                         </div>
                                         <div class="form-group">
                                             <label class="form-label">LLM 모델</label>
@@ -1532,6 +1534,7 @@
             
             try {
                 // 쿼리만 실행하는 API 호출
+                const autoExecute = document.getElementById('queryAutoExecute').value === 'true';
                 const res = await fetch('/schema/ai/query', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1539,7 +1542,7 @@
                         question: document.getElementById('queryQuestion').value.trim(),
                         table_names: Array.from(querySelectedTables),
                         max_rows: parseInt(document.getElementById('queryMaxRows').value) || 50,
-                        auto_execute: true,
+                        auto_execute: autoExecute,  // UI 설정값 사용 (기본: false)
                         model: document.getElementById('queryLlmModel').value || 'vertex_ai/gemini-2.5-flash',
                     })
                 });
