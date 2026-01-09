@@ -898,11 +898,20 @@ def check_sql_security(sql_query: str, original_question: str = "") -> SqlSecuri
     6. 악의적 의도
     """
     violations = []
-    sql_upper = sql_query.upper().strip()
+    
+    # SQL 쿼리 정규화 (우회 공격 방지)
+    # 1. 주석 제거
+    normalized_sql = re.sub(r'--.*$', ' ', sql_query, flags=re.MULTILINE)  # 라인 주석
+    normalized_sql = re.sub(r'/\*.*?\*/', ' ', normalized_sql, flags=re.DOTALL)  # 블록 주석
+    # 2. 연속 공백을 단일 공백으로
+    normalized_sql = re.sub(r'\s+', ' ', normalized_sql)
+    # 3. 대문자 변환 (비교용)
+    sql_upper = normalized_sql.upper().strip()
     question_lower = original_question.lower()
     
-    # 1. SQL Injection 패턴 검사
+    # 1. SQL Injection 패턴 검사 (원본 + 정규화된 쿼리 모두 검사)
     for pattern in SQL_INJECTION_PATTERNS:
+        # 원본 쿼리 검사
         if re.search(pattern, sql_query, re.IGNORECASE):
             violations.append(SecurityViolation(
                 violation_type=SecurityViolationType.SQL_INJECTION,
@@ -910,8 +919,17 @@ def check_sql_security(sql_query: str, original_question: str = "") -> SqlSecuri
                 description="SQL Injection 패턴이 감지되었습니다.",
                 matched_pattern=pattern
             ))
+            continue
+        # 정규화된 쿼리 검사 (우회 공격 방지)
+        if re.search(pattern, normalized_sql, re.IGNORECASE):
+            violations.append(SecurityViolation(
+                violation_type=SecurityViolationType.SQL_INJECTION,
+                risk_level=SecurityRiskLevel.CRITICAL,
+                description="SQL Injection 패턴이 감지되었습니다 (주석/공백 우회 시도).",
+                matched_pattern=pattern
+            ))
     
-    # 2. DDL 명령어 검사
+    # 2. DDL 명령어 검사 (정규화된 쿼리 사용)
     for cmd in PROHIBITED_DDL_COMMANDS:
         if re.search(rf'\b{cmd}\b', sql_upper):
             violations.append(SecurityViolation(

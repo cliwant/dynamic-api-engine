@@ -20,6 +20,7 @@ logic_type에 따라 적절한 로직을 실행합니다.
 from typing import Any, Optional
 from datetime import datetime, date
 from decimal import Decimal
+import asyncio
 import json
 import re
 import httpx
@@ -141,6 +142,9 @@ class ExecutorService:
                 "MULTIPLE_QUERIES_DETECTED"
             )
     
+    # SQL 실행 기본 타임아웃 (초)
+    SQL_TIMEOUT_SECONDS = 30
+    
     @classmethod
     async def _execute_sql(
         cls,
@@ -151,11 +155,22 @@ class ExecutorService:
     ) -> dict[str, Any]:
         """
         단일 SQL 쿼리 실행
+        
+        보안:
+        - SQL Injection 검증
+        - 타임아웃 적용 (기본 30초)
         """
         cls._validate_sql(query)
         
+        # 타임아웃 설정 (config에서 재정의 가능)
+        timeout = config.get("sql_timeout", cls.SQL_TIMEOUT_SECONDS)
+        
         try:
-            result = await db.execute(text(query), params)
+            # 타임아웃 적용
+            result = await asyncio.wait_for(
+                db.execute(text(query), params),
+                timeout=timeout
+            )
             
             if query.strip().upper().startswith("SELECT"):
                 rows = result.fetchall()
@@ -171,6 +186,13 @@ class ExecutorService:
                     "result": {"affected_rows": result.rowcount},
                     "result_count": result.rowcount,
                 }
+        except asyncio.TimeoutError:
+            await db.rollback()
+            raise ExecutorError(
+                f"SQL 실행 타임아웃: 쿼리가 {timeout}초 내에 완료되지 않았습니다. "
+                "쿼리를 최적화하거나 인덱스를 확인하세요.",
+                "SQL_TIMEOUT"
+            )
         except Exception as e:
             await db.rollback()
             raise ExecutorError(f"SQL 실행 오류: {str(e)}", "SQL_EXECUTION_ERROR")

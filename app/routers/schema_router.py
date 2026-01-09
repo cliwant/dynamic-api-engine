@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.core.database import get_db, get_readonly_db
 from app.schemas.common import ResponseBase
 from app.services import schema_service
 from app.services.llm_service import (
@@ -709,8 +709,15 @@ class NaturalLanguageQueryGenerateRequest(BaseModel):
 async def generate_and_execute_query(
     request: NaturalLanguageQueryGenerateRequest,
     db: AsyncSession = Depends(get_db),
+    readonly_db: AsyncSession = Depends(get_readonly_db),
 ):
-    """자연어를 SQL 쿼리로 변환하고 실행"""
+    """
+    자연어를 SQL 쿼리로 변환하고 실행
+    
+    보안: SQL 쿼리 실행 시 읽기 전용 DB 계정을 사용합니다.
+    - 스키마 조회: 기본 DB 세션 (get_db)
+    - SQL 쿼리 실행: 읽기 전용 세션 (get_readonly_db)
+    """
     
     # 1. 테이블 스키마 정보 조회
     if request.table_names:
@@ -787,8 +794,15 @@ async def generate_and_execute_query(
         # 3. 자동 실행 (보안 검사 통과 시)
         if request.auto_execute and result.execution_allowed and result.sql_query:
             try:
-                # SQL 실행
-                query_result = await db.execute(text(result.sql_query))
+                import asyncio
+                
+                # SQL 실행 (⚠️ 읽기 전용 세션 사용 - DDL/DML 차단)
+                # 타임아웃 30초 적용
+                SQL_TIMEOUT = 30
+                query_result = await asyncio.wait_for(
+                    readonly_db.execute(text(result.sql_query)),
+                    timeout=SQL_TIMEOUT
+                )
                 rows = query_result.fetchall()
                 columns = query_result.keys()
                 
@@ -811,6 +825,11 @@ async def generate_and_execute_query(
                     "data": data,
                 }
                 
+            except asyncio.TimeoutError:
+                response_data["execution_result"] = {
+                    "success": False,
+                    "error": f"쿼리 실행 타임아웃: {SQL_TIMEOUT}초 내에 완료되지 않았습니다. 쿼리를 최적화하거나 LIMIT을 줄여보세요.",
+                }
             except Exception as exec_error:
                 response_data["execution_result"] = {
                     "success": False,

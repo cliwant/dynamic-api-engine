@@ -22,10 +22,28 @@ class Settings(BaseSettings):
     mysql_port: int = int(os.getenv("MYSQL_PORT", "3306"))
     mysql_pool_size: int = int(os.getenv("MYSQL_POOL_SIZE", "10"))
     
+    # 읽기 전용 DB 계정 (자연어 SQL 쿼리 실행용)
+    # 설정되지 않으면 기본 계정 사용 (경고 로그 출력)
+    mysql_readonly_user: str = os.getenv("MYSQL_READONLY_USER", "")
+    mysql_readonly_password: str = os.getenv("MYSQL_READONLY_PASSWORD", "")
+    
     @property
     def database_url(self) -> str:
-        """SQLAlchemy 비동기 연결 URL 생성"""
+        """SQLAlchemy 비동기 연결 URL 생성 (기본 - 전체 권한)"""
         return f"mysql+aiomysql://{self.mysql_user}:{self.mysql_password}@{self.mysql_host}:{self.mysql_port}/{self.mysql_db}"
+    
+    @property
+    def readonly_database_url(self) -> str:
+        """읽기 전용 DB 연결 URL (자연어 SQL 쿼리용)"""
+        # 읽기 전용 계정이 설정되어 있으면 사용, 아니면 기본 계정 사용
+        user = self.mysql_readonly_user or self.mysql_user
+        password = self.mysql_readonly_password or self.mysql_password
+        return f"mysql+aiomysql://{user}:{password}@{self.mysql_host}:{self.mysql_port}/{self.mysql_db}"
+    
+    @property
+    def has_readonly_account(self) -> bool:
+        """읽기 전용 계정이 설정되어 있는지 확인"""
+        return bool(self.mysql_readonly_user and self.mysql_readonly_password)
     
     # Security
     secret_key: str = os.getenv("SECRET_KEY", "your-super-secret-key-change-in-production")

@@ -112,15 +112,71 @@ async def get_table_indexes(db: AsyncSession, table_name: str) -> list[dict]:
     return list(indexes.values())
 
 
+# 민감 컬럼 패턴 (마스킹 대상)
+SENSITIVE_COLUMN_PATTERNS = [
+    r".*password.*",
+    r".*passwd.*",
+    r".*secret.*",
+    r".*token.*",
+    r".*api_key.*",
+    r".*apikey.*",
+    r".*private.*",
+    r".*credential.*",
+    r".*ssn.*",               # 주민등록번호
+    r".*social_security.*",
+    r".*credit_card.*",
+    r".*card_num.*",
+    r".*cvv.*",
+    r".*cvc.*",
+    r".*pin.*",
+    r".*salt.*",
+    r".*hash.*",
+]
+
+
+def _is_sensitive_column(column_name: str) -> bool:
+    """컬럼명이 민감 정보 패턴에 매칭되는지 확인"""
+    import re
+    column_lower = column_name.lower()
+    for pattern in SENSITIVE_COLUMN_PATTERNS:
+        if re.match(pattern, column_lower):
+            return True
+    return False
+
+
+def _mask_value(value, column_name: str):
+    """
+    민감 컬럼 값 마스킹
+    
+    - 문자열: 앞 2자만 보이고 나머지 *
+    - 숫자: ****
+    - 기타: [MASKED]
+    """
+    if value is None:
+        return None
+    
+    if isinstance(value, str):
+        if len(value) <= 2:
+            return "***"
+        return value[:2] + "*" * min(len(value) - 2, 8)
+    elif isinstance(value, (int, float)):
+        return "****"
+    else:
+        return "[MASKED]"
+
+
 async def get_table_sample_data(
     db: AsyncSession, 
     table_name: str, 
-    limit: int = 5
+    limit: int = 5,
+    mask_sensitive: bool = True  # 민감 컬럼 마스킹 활성화
 ) -> list[dict]:
     """
     테이블의 샘플 데이터 조회 (최대 5행)
     
-    ⚠️ 보안: 테이블명 검증 후 사용
+    ⚠️ 보안: 
+    - 테이블명 검증 후 사용
+    - 민감 컬럼 자동 마스킹 (기본 활성화)
     """
     # 테이블명 검증 (SQL Injection 방지)
     safe_table_name = table_name.replace("`", "").replace("'", "").replace('"', "")
@@ -139,12 +195,22 @@ async def get_table_sample_data(
         sample_query = text(f"SELECT * FROM `{safe_table_name}` LIMIT :limit")
         result = await db.execute(sample_query, {"limit": limit})
         rows = result.fetchall()
-        columns = result.keys()
+        columns = list(result.keys())
         
-        return [
-            {col: _serialize_value(val) for col, val in zip(columns, row)}
-            for row in rows
-        ]
+        # 민감 컬럼 마스킹 처리
+        masked_data = []
+        for row in rows:
+            row_dict = {}
+            for col, val in zip(columns, row):
+                serialized_val = _serialize_value(val)
+                # 민감 컬럼이면 마스킹
+                if mask_sensitive and _is_sensitive_column(col):
+                    row_dict[col] = _mask_value(serialized_val, col)
+                else:
+                    row_dict[col] = serialized_val
+            masked_data.append(row_dict)
+        
+        return masked_data
     except Exception:
         return []
 
