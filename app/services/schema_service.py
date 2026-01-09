@@ -168,13 +168,22 @@ def _serialize_value(val):
     return val
 
 
-async def get_table_full_schema(db: AsyncSession, table_name: str) -> dict:
+async def get_table_full_schema(
+    db: AsyncSession, 
+    table_name: str,
+    sample_limit: int = 5
+) -> dict:
     """
     테이블의 전체 스키마 정보 (컬럼 + 인덱스 + 샘플 데이터)
+    
+    Args:
+        db: 데이터베이스 세션
+        table_name: 테이블명
+        sample_limit: 샘플 데이터 최대 개수 (기본 5개)
     """
     columns = await get_table_columns(db, table_name)
     indexes = await get_table_indexes(db, table_name)
-    sample_data = await get_table_sample_data(db, table_name, limit=5)
+    sample_data = await get_table_sample_data(db, table_name, limit=sample_limit)
     
     return {
         "table_name": table_name,
